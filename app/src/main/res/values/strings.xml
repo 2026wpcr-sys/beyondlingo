@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">无界译 AI</string>
+    <string name="app_name_en">BeyondLingo AI</string>
+
+    <!-- 品牌 -->
+    <string name="brand_author">无界者（BeyondDev）</string>
+    <string name="brand_slogan_zh">跨越语言边界，让沟通自由发生。</string>
+    <string name="brand_slogan_en">Break Language Barriers. Speak Freely.</string>
+
+    <!-- 无障碍服务 -->
+    <string name="accessibility_label">无界译 · 划词翻译</string>
+    <string name="accessibility_summary">选中文本即可翻译</string>
+    <string name="accessibility_description">
+        开启后，在任意应用中选中文字，无界译会弹出悬浮窗显示译文。\n\n
+        本服务仅读取你主动选中的文本内容，不会收集或上传其它信息。
+    </string>
+
+    <!-- 通知 -->
+    <string name="notification_channel_name">划词翻译</string>
+    <string name="notification_title">无界译 · 运行中</string>
+    <string name="notification_text">选中文本或复制文字即可翻译</string>
+</resources>

@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.ui.overlay
+package dev.beyonddev.beyondlingo.ui.overlay
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -91,7 +91,9 @@ fun OverlayContent(
                     onDrag(dragAmount.x, dragAmount.y)
                 }
             }
-            .animateContentSize(animationSpec = tween(180))
+            // 注意：这里**不能**用 animateContentSize。
+            // 拖选长文字时译文长度会不断变化，尺寸动画会让窗口高度反复伸缩，
+            // 表现为明显闪烁。固定高度 + 内部滚动更稳定。
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -189,20 +191,37 @@ fun OverlayContent(
         ) {
             when {
                 isTranslating -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = Color(0xFF8AB4F8),
-                        )
-                        Text(
-                            text = "正在翻译…",
-                            color = Color(0xFF8A8F98),
-                            style = LocalTextStyle.current.copy(fontSize = 13.sp),
-                        )
+                    // 有旧译文时保留内容，只在上方加一行进度提示，
+                    // 避免连续触发时窗口内容来回闪烁
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFF8AB4F8),
+                            )
+                            Text(
+                                text = "正在翻译…",
+                                color = Color(0xFF8A8F98),
+                                style = LocalTextStyle.current.copy(fontSize = 12.sp),
+                            )
+                        }
+                        if (resultText.isNotBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = resultText,
+                                color = Color(0xFF8A8F98),
+                                style = LocalTextStyle.current.copy(
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp,
+                                ),
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
 
@@ -218,25 +237,34 @@ fun OverlayContent(
                 }
 
                 else -> {
-                    Text(
-                        text = resultText,
-                        color = Color(0xFFE8EAED),
-                        style = LocalTextStyle.current.copy(
-                            // 正文跟随系统字号，这是核心需求
-                            fontSize = 16.sp,
-                            lineHeight = 24.sp,
-                        ),
-                        maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_MAX_LINES,
-                        overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
-                        modifier = if (expanded) {
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = EXPANDED_MAX_HEIGHT)
-                                .verticalScroll(rememberScrollState())
-                        } else {
-                            Modifier.fillMaxWidth()
-                        },
-                    )
+                    // 固定折叠高度：折叠与展开切换时窗口尺寸不跳变
+                    val bodyHeight = if (expanded) EXPANDED_MAX_HEIGHT else COLLAPSED_HEIGHT
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(bodyHeight),
+                    ) {
+                        Text(
+                            text = resultText,
+                            color = Color(0xFFE8EAED),
+                            style = LocalTextStyle.current.copy(
+                                // 正文跟随系统字号，这是核心需求
+                                fontSize = 16.sp,
+                                lineHeight = 24.sp,
+                            ),
+                            maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_MAX_LINES,
+                            overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                            modifier = if (expanded) {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(EXPANDED_MAX_HEIGHT)
+                                    .verticalScroll(rememberScrollState())
+                            } else {
+                                Modifier.fillMaxWidth()
+                            },
+                        )
+                    }
 
                     // 折叠时的「展开全文」提示
                     if (collapsible && !expanded) {
@@ -260,6 +288,14 @@ private const val COLLAPSE_CHAR_THRESHOLD = 160
 
 /** 折叠状态显示的最大行数 */
 private const val COLLAPSED_MAX_LINES = 6
+
+/**
+ * 折叠状态的固定高度。
+ *
+ * 固定高度是防闪烁的关键：若高度随内容变化，
+ * 拖选长文字时译文长度不断改变会导致窗口反复伸缩。
+ */
+private val COLLAPSED_HEIGHT = 150.dp
 
 /** 展开状态的最大高度，超出后可滚动 */
 private val EXPANDED_MAX_HEIGHT = 320.dp

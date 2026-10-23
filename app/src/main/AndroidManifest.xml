@@ -41,8 +41,8 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
-            <!-- 支持选中文本后「处理文本」菜单 -->
-            <intent-filter>
+            <!-- 支持选中文本后「处理文本」菜单（系统菜单里显示「翻译」） -->
+            <intent-filter android:label="@string/process_text_label">
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />

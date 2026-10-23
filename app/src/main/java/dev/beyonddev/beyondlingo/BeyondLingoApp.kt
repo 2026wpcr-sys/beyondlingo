@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo
+package dev.beyonddev.beyondlingo
 
 import android.app.Application
 import dev.beyonddev.beyondlingo.data.SettingsStore
@@ -26,6 +26,23 @@ class BeyondLingoApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        restoreBubble()
+    }
+
+    /** 进程重启后，若用户开启了悬浮球则自动恢复 */
+    private fun restoreBubble() {
+        appScope.launch {
+            try {
+                val settings = dev.beyonddev.beyondlingo.data.SettingsStore(this@BeyondLingoApp)
+                    .settings.first()
+                if (settings.bubbleEnabled) {
+                    dev.beyonddev.beyondlingo.service.FloatingWindowService
+                        .setBubbleVisible(this@BeyondLingoApp, true)
+                }
+            } catch (_: Exception) {
+                // 静默失败
+            }
+        }
     }
 
     companion object {

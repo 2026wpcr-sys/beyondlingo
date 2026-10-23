@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.data
+package dev.beyonddev.beyondlingo.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
@@ -51,6 +51,9 @@ data class AppSettings(
     val floatingAutoDismiss: Boolean = true,
     val floatingAutoDismissMs: Long = 5000L,
 
+    /** 常驻悬浮球：复制文字后点球即翻译（最可靠的取词方式） */
+    val bubbleEnabled: Boolean = false,
+
     /** 主题：system / light / dark */
     val themeMode: String = "system",
 ) {
@@ -76,6 +79,7 @@ class SettingsStore(private val context: Context) {
             silentAutoTranslate = prefs[KEY_SILENT_AUTO] ?: false,
             floatingAutoDismiss = prefs[KEY_FLOAT_DISMISS] ?: true,
             floatingAutoDismissMs = prefs[KEY_FLOAT_DISMISS_MS] ?: 5000L,
+            bubbleEnabled = prefs[KEY_BUBBLE] ?: false,
             themeMode = prefs[KEY_THEME] ?: "system",
         )
     }
@@ -105,6 +109,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setSilentAutoTranslate(enabled: Boolean) = edit { it[KEY_SILENT_AUTO] = enabled }
     suspend fun setFloatingAutoDismiss(enabled: Boolean) = edit { it[KEY_FLOAT_DISMISS] = enabled }
     suspend fun setFloatingAutoDismissMs(ms: Long) = edit { it[KEY_FLOAT_DISMISS_MS] = ms }
+    suspend fun setBubbleEnabled(enabled: Boolean) = edit { it[KEY_BUBBLE] = enabled }
     suspend fun setThemeMode(mode: String) = edit { it[KEY_THEME] = mode }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
@@ -158,6 +163,7 @@ class SettingsStore(private val context: Context) {
         val KEY_SILENT_AUTO = booleanPreferencesKey("silent_auto_translate")
         val KEY_FLOAT_DISMISS = booleanPreferencesKey("floating_dismiss")
         val KEY_FLOAT_DISMISS_MS = longPreferencesKey("floating_dismiss_ms")
+        val KEY_BUBBLE = booleanPreferencesKey("bubble_enabled")
         val KEY_THEME = stringPreferencesKey("theme_mode")
     }
 }

@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.ui.screen
+package dev.beyonddev.beyondlingo.ui.screen
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -90,6 +90,14 @@ fun TranslateScreen(
     val context = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
     var copiedHint by remember { mutableStateOf(false) }
+
+    // 消费从系统菜单/分享传入的待翻译文本（ACTION_PROCESS_TEXT / SEND）
+    LaunchedEffect(Unit) {
+        val text = dev.beyonddev.beyondlingo.ExternalTextChannel.consume()
+        if (!text.isNullOrBlank()) {
+            viewModel.translateSilently(text)
+        }
+    }
 
     // 翻译成功后按设置自动复制
     LaunchedEffect(uiState) {

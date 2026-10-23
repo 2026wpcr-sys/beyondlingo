@@ -11,6 +11,9 @@
     <!-- 无障碍服务 -->
     <string name="accessibility_label">无界译 · 划词翻译</string>
     <string name="accessibility_summary">选中文本即可翻译</string>
+
+    <!-- 系统「处理文本」菜单项 -->
+    <string name="process_text_label">翻译</string>
     <string name="accessibility_description">
         开启后，在任意应用中选中文字，无界译会弹出悬浮窗显示译文。\n\n
         本服务仅读取你主动选中的文本内容，不会收集或上传其它信息。

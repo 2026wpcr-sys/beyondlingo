@@ -162,11 +162,73 @@ fun SettingsScreen(
             // ============ 划词翻译 ============
             SectionTitle("划词翻译")
 
+            // 系统菜单翻译说明（最可靠的方式）
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                ),
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "💡 取词方式",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "方式一：悬浮球（最可靠）\n" +
+                            "复制文字 → 点悬浮球 → 立即翻译。适用于所有 App。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "方式二：自动划词（仅 WhatsApp）\n" +
+                            "在 WhatsApp 长按消息即翻译。\n" +
+                            "Chrome、微信等自绘渲染的 App 不派发选中事件，请用悬浮球。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // 复制取词（最可靠）
             SettingsCard {
                 SwitchRow(
-                    title = "无障碍划词",
+                    title = "悬浮球（复制取词）",
+                    subtitle = if (hasOverlayPermission)
+                        "复制文字后点悬浮球即翻译，适用于所有 App"
+                    else "需要悬浮窗权限",
+                    checked = settings.bubbleEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled && !hasOverlayPermission) {
+                            requestOverlayPermission(context)
+                        } else {
+                            viewModel.setBubbleEnabled(enabled)
+                        }
+                    },
+                )
+
+                if (!hasOverlayPermission) {
+                    PermissionHint(
+                        text = "授予悬浮窗权限",
+                        onClick = { requestOverlayPermission(context) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            SettingsCard {
+                SwitchRow(
+                    title = "无障碍划词（辅助）",
                     subtitle = if (accessibilityEnabled)
-                        "已开启，长按选中文字即可翻译"
+                        "已开启；仅部分 App 支持自动弹窗（如 WhatsApp）"
                     else "需在系统设置中启用无障碍服务",
                     checked = settings.selectionTranslateEnabled,
                     onCheckedChange = { enabled ->

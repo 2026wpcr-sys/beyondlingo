@@ -1,6 +1,7 @@
-﻿package dev.beyonddev.beyondlingo
+package dev.beyonddev.beyondlingo
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -54,6 +55,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // 处理「系统菜单 → 翻译」传入的选中文本（PROCESS_TEXT / SEND）
+        handleIncomingIntent(intent)
+
         setContent {
             val vm: TranslateViewModel = viewModel()
             val settings by vm.settings.collectAsStateWithLifecycle()
@@ -63,8 +67,8 @@ class MainActivity : ComponentActivity() {
             }
 
             var showSplash by remember {
-                // 同一次进程内只展示一次启动页
-                mutableStateOf(!splashShown)
+                // 同一次进程内只展示一次启动页；但从系统菜单进入时跳过启动页
+                mutableStateOf(!splashShown && !ExternalTextChannel.hasPending())
             }
 
             BeyondLingoTheme(themeMode = settings.themeMode) {
@@ -84,6 +88,41 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    /**
+     * 处理外部传入的文本。
+     *
+     * 这是最可靠的取词通道：在任何 App 里选中文字 → 系统弹出菜单
+     * → 点「无界译」→ 系统通过 ACTION_PROCESS_TEXT 把选中文字传进来。
+     * Chrome、微信等所有 App 都支持，不受无障碍事件限制。
+     */
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+
+        val action = intent.action ?: return
+
+        val text = when (action) {
+            Intent.ACTION_PROCESS_TEXT -> {
+                intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+            }
+            Intent.ACTION_SEND -> {
+                if (intent.type == "text/plain") {
+                    intent.getStringExtra(Intent.EXTRA_TEXT)
+                } else null
+            }
+            else -> null
+        }
+
+        if (!text.isNullOrBlank()) {
+            ExternalTextChannel.put(text)
         }
     }
 

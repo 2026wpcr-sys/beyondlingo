@@ -270,6 +270,19 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsStore.setFloatingAutoDismiss(enabled) }
     }
 
+    /** 常驻悬浮球开关：控制「复制后点球翻译」入口 */
+    fun setBubbleEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsStore.setBubbleEnabled(enabled)
+            try {
+                dev.beyonddev.beyondlingo.service.FloatingWindowService
+                    .setBubbleVisible(getApplication(), enabled)
+            } catch (_: Exception) {
+                // 后台启动受限或未授予悬浮窗权限时忽略
+            }
+        }
+    }
+
     fun setHistoryLimit(limit: Int) {
         viewModelScope.launch { settingsStore.setHistoryLimit(limit) }
     }

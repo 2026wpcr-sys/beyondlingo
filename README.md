@@ -1,4 +1,4 @@
-﻿# 无界译 AI · BeyondLingo AI
+# 无界译 AI · BeyondLingo AI
 
 > **跨越语言边界，让沟通自由发生。**
 > *Break Language Barriers. Speak Freely.*
@@ -19,6 +19,8 @@
   - ① 输入框防抖（停止输入自动翻译）
   - ② 无障碍划词（长按选中文字即翻译）
 - **静默模式**：划词后不弹窗，结果直写通知栏
+- **图片取词（OCR）**：从相册选图或拍照，本地识别文字后直接翻译
+  - ML Kit 拉丁文字模型，完全离线，图片不上传
 - **翻译历史**：Room 本地存储，可搜索、收藏、复制
 - **原生体验**：Kotlin + Jetpack Compose，单 Activity
 

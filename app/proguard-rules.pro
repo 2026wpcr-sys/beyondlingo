@@ -37,12 +37,36 @@
 -keep class dev.beyonddev.beyondlingo.MainActivity { *; }
 -keep class dev.beyonddev.beyondlingo.BeyondLingoApp { *; }
 
+# ViewModel 通过反射按类名实例化，必须保留无参构造与类名
+-keep class dev.beyonddev.beyondlingo.vm.** { *; }
+-keepclassmembers class * extends androidx.lifecycle.ViewModel {
+    <init>(...);
+}
+
+# Compose 页面与组件被 Compose 编译器引用，保留以防反射失效
+-keep class dev.beyonddev.beyondlingo.ui.** { *; }
+
+# OCR 引擎
+-keep class dev.beyonddev.beyondlingo.data.ocr.** { *; }
+
 # 引擎实现通过接口调用，保留以支持未来插件化
 -keep class dev.beyonddev.beyondlingo.data.engine.** { *; }
 
 # 数据模型用于 JSON 解析
 -keep class dev.beyonddev.beyondlingo.data.engine.EngineConfig { *; }
 -keep class dev.beyonddev.beyondlingo.data.engine.EnginePreset { *; }
+
+# ---------- ML Kit ----------
+# ML Kit 通过反射加载内部实现，需整体保留
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_text_common.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_common.** { *; }
+-dontwarn com.google.mlkit.**
+-dontwarn com.google.android.gms.internal.mlkit_**
+
+# ---------- Coil ----------
+-keep class coil.** { *; }
+-dontwarn coil.**
 
 # ---------- 通用 ----------
 # 保留行号用于崩溃分析（混淆后仍可定位）

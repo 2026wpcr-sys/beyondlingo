@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.data
+package dev.beyonddev.beyondlingo.data
 
 import android.content.Context
 import dev.beyonddev.beyondlingo.data.db.AppDatabase
@@ -41,6 +41,15 @@ class TranslateRepository(context: Context) {
             return TranslateOutcome.Failure("请输入要翻译的文本")
         }
 
+        // 防御：源语言与目标语言相同时，翻译毫无意义（引擎会原样返回）。
+        // 这种情况通常来自用户误设源语言，或划词时文本与预设语言不符。
+        // 自动降级为「自动检测源语言」，让引擎自己判断。
+        val effectiveSource = if (source != LangEnum.Auto && source.code == target.code) {
+            LangEnum.Auto
+        } else {
+            source
+        }
+
         val engine = EngineRegistry.get(engineId)
 
         // 1. 查缓存（DB 异常不应中断翻译）
@@ -48,7 +57,7 @@ class TranslateRepository(context: Context) {
             val cached = try {
                 dao.findExisting(
                     sourceText = trimmed,
-                    sourceLang = source.code,
+                    sourceLang = effectiveSource.code,
                     targetLang = target.code,
                     engineId = engineId,
                 )
@@ -67,7 +76,7 @@ class TranslateRepository(context: Context) {
         // 2. 调引擎（引擎内部已兜底，这里再加一层保险）
         val started = System.currentTimeMillis()
         val outcome = try {
-            engine.translate(trimmed, source, target, config)
+            engine.translate(trimmed, effectiveSource, target, config)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -81,7 +90,7 @@ class TranslateRepository(context: Context) {
         // 3. 成功则落库
         if (outcome is TranslateOutcome.Success) {
             val elapsed = (System.currentTimeMillis() - started).coerceAtLeast(0L)
-            persist(trimmed, outcome, source, target, engineId, elapsed)
+            persist(trimmed, outcome, effectiveSource, target, engineId, elapsed)
             return outcome.copy(elapsedMs = elapsed)
         }
 

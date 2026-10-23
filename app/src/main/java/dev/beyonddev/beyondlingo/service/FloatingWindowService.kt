@@ -1,4 +1,4 @@
-package dev.beyonddev.beyondlingo.service
+﻿package dev.beyonddev.beyondlingo.service
 
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.util.Log
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -213,13 +214,18 @@ class FloatingWindowService : LifecycleService(),
     // ---------- 翻译 ----------
 
     private fun showAndTranslate(text: String) {
+        Log.d(TAG, "showAndTranslate: '${text.take(40)}'")
         scope.launch {
             val settings = SettingsStore(applicationContext).settings.first()
 
             // 静默模式：只翻译，不弹窗，结果写通知
             if (settings.silentAutoTranslate) {
                 val repo = TranslateRepository(applicationContext)
+                Log.d(TAG, "calling translate...")
+
                 val outcome = repo.translateWithCurrentSettings(text, checkCacheFirst = true)
+
+                Log.d(TAG, "translate result: $outcome")
                 when (outcome) {
                     is TranslateOutcome.Success ->
                         updateNotification(text.take(40), outcome.text.take(200))
@@ -241,7 +247,11 @@ class FloatingWindowService : LifecycleService(),
             scheduleAutoDismiss(settings.floatingAutoDismiss, settings.floatingAutoDismissMs)
 
             val repo = TranslateRepository(applicationContext)
+            Log.d(TAG, "calling translate...")
+
             val outcome = repo.translateWithCurrentSettings(text, checkCacheFirst = true)
+
+            Log.d(TAG, "translate result: $outcome")
 
             when (outcome) {
                 is TranslateOutcome.Success -> {
@@ -463,6 +473,7 @@ class FloatingWindowService : LifecycleService(),
     }
 
     companion object {
+        private const val TAG = "BeyondLingoFloat"
         const val CHANNEL_ID = "beyondlingo_overlay"
         const val NOTIFICATION_ID = 1001
 

@@ -12,7 +12,6 @@ import dev.beyonddev.beyondlingo.data.engine.LangEnum
 import dev.beyonddev.beyondlingo.data.engine.TranslateEngine
 import dev.beyonddev.beyondlingo.data.engine.TranslateOutcome
 import dev.beyonddev.beyondlingo.util.Debouncer
-import dev.beyonddev.beyondlingo.util.LanguageDetector
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -155,12 +154,9 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         val engine = EngineRegistry.get(s.engineId)
         val config = s.configFor(s.engineId)
 
-        // 源语言为自动检测时，用本地启发式先判一次，避免引擎识别不准
-        val source = if (s.defaultSourceLang == LangEnum.Auto) {
-            LanguageDetector.detect(text)
-        } else {
-            s.defaultSourceLang
-        }
+        // 源语言：用户选了「自动检测」就交给引擎判断，不要用本地启发式覆盖。
+        // 本地检测只用于 UI 上的参考提示，作为请求参数会误判（尤其中西混排的聊天文本）。
+        val source = s.defaultSourceLang
 
         val started = System.currentTimeMillis()
 

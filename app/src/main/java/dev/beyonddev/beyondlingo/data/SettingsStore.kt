@@ -43,9 +43,7 @@ data class AppSettings(
     val historyLimit: Int = 1000,
 
     /** 无障碍划词 */
-    val selectionTranslateEnabled: Boolean = false,
-    /** 剪贴板监听 */
-    val clipboardWatchEnabled: Boolean = false,
+    val selectionTranslateEnabled: Boolean = true,
     /** 静默自动翻译：划词/复制后直接出结果，不弹悬浮窗 */
     val silentAutoTranslate: Boolean = false,
 
@@ -74,8 +72,7 @@ class SettingsStore(private val context: Context) {
             autoTranslateDelayMs = prefs[KEY_AUTO_DELAY] ?: 800L,
             copyAfterTranslate = prefs[KEY_COPY_AFTER] ?: false,
             historyLimit = prefs[KEY_HISTORY_LIMIT] ?: 1000,
-            selectionTranslateEnabled = prefs[KEY_SELECTION] ?: false,
-            clipboardWatchEnabled = prefs[KEY_CLIPBOARD] ?: false,
+            selectionTranslateEnabled = prefs[KEY_SELECTION] ?: true,
             silentAutoTranslate = prefs[KEY_SILENT_AUTO] ?: false,
             floatingAutoDismiss = prefs[KEY_FLOAT_DISMISS] ?: true,
             floatingAutoDismissMs = prefs[KEY_FLOAT_DISMISS_MS] ?: 5000L,
@@ -94,6 +91,8 @@ class SettingsStore(private val context: Context) {
         prefs[stringPreferencesKey("cfg_${engineId}_authhdr")] = config.authHeader
         prefs[stringPreferencesKey("cfg_${engineId}_authpfx")] = config.authPrefix
         prefs[stringPreferencesKey("cfg_${engineId}_headers")] = config.extraHeaders
+
+        prefs[stringPreferencesKey("cfg_${engineId}_preset")] = config.presetName
     }
 
     suspend fun setSourceLang(lang: LangEnum) = edit { it[KEY_SOURCE_LANG] = lang.code }
@@ -103,7 +102,6 @@ class SettingsStore(private val context: Context) {
     suspend fun setCopyAfterTranslate(enabled: Boolean) = edit { it[KEY_COPY_AFTER] = enabled }
     suspend fun setHistoryLimit(limit: Int) = edit { it[KEY_HISTORY_LIMIT] = limit }
     suspend fun setSelectionTranslate(enabled: Boolean) = edit { it[KEY_SELECTION] = enabled }
-    suspend fun setClipboardWatch(enabled: Boolean) = edit { it[KEY_CLIPBOARD] = enabled }
     suspend fun setSilentAutoTranslate(enabled: Boolean) = edit { it[KEY_SILENT_AUTO] = enabled }
     suspend fun setFloatingAutoDismiss(enabled: Boolean) = edit { it[KEY_FLOAT_DISMISS] = enabled }
     suspend fun setFloatingAutoDismissMs(ms: Long) = edit { it[KEY_FLOAT_DISMISS_MS] = ms }
@@ -126,6 +124,8 @@ class SettingsStore(private val context: Context) {
             val authPfx = prefs[stringPreferencesKey("cfg_${id}_authpfx")].orEmpty()
             val headers = prefs[stringPreferencesKey("cfg_${id}_headers")].orEmpty()
 
+            val presetName = prefs[stringPreferencesKey("cfg_${id}_preset")].orEmpty()
+
             val hasAny = key.isNotEmpty() || url.isNotEmpty() || model.isNotEmpty() ||
                 prompt.isNotEmpty() || path.isNotEmpty()
             if (hasAny) {
@@ -138,6 +138,8 @@ class SettingsStore(private val context: Context) {
                     authHeader = authHdr,
                     authPrefix = authPfx,
                     extraHeaders = headers,
+
+                    presetName = presetName,
                 )
             }
         }
@@ -153,7 +155,6 @@ class SettingsStore(private val context: Context) {
         val KEY_COPY_AFTER = booleanPreferencesKey("copy_after")
         val KEY_HISTORY_LIMIT = intPreferencesKey("history_limit")
         val KEY_SELECTION = booleanPreferencesKey("selection_translate")
-        val KEY_CLIPBOARD = booleanPreferencesKey("clipboard_watch")
         val KEY_SILENT_AUTO = booleanPreferencesKey("silent_auto_translate")
         val KEY_FLOAT_DISMISS = booleanPreferencesKey("floating_dismiss")
         val KEY_FLOAT_DISMISS_MS = longPreferencesKey("floating_dismiss_ms")

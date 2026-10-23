@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.data.engine
+package dev.beyonddev.beyondlingo.data.engine
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,8 +21,37 @@ import org.json.JSONObject
 class CustomEngine : TranslateEngine {
 
     override val id = "custom"
+
+    /**
+     * 静态显示名。实际展示时优先用 [displayNameFor]，
+     * 它会根据用户选中的预设返回具体服务名（如「智谱 GLM」）。
+     */
     override val displayName = "自定义引擎"
+
     override val requiresApiKey = true
+
+    /**
+     * 根据配置返回动态显示名。
+     *
+     * 用户点过预设（智谱 GLM / DeepSeek / 硅基流动 …）后，
+     * 界面应显示具体服务名，而不是笼统的「自定义引擎」。
+     */
+    fun displayNameFor(config: EngineConfig): String {
+        val preset = config.presetName.trim()
+        if (preset.isNotEmpty()) return preset
+
+        // 没记录预设名时，尝试从 baseUrl 反推
+        val url = config.baseUrl.lowercase()
+        return when {
+            url.contains("bigmodel") -> "智谱 GLM"
+            url.contains("deepseek") -> "DeepSeek"
+            url.contains("siliconflow") -> "硅基流动"
+            url.contains("moonshot") -> "Moonshot"
+            url.contains("groq") -> "Groq"
+            url.contains("openai.com") -> "OpenAI"
+            else -> displayName
+        }
+    }
 
     override fun supports(lang: LangEnum): Boolean = lang != LangEnum.Auto
 

@@ -1,4 +1,4 @@
-package dev.beyonddev.beyondlingo.ui.screen
+﻿package dev.beyonddev.beyondlingo.ui.screen
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -69,6 +69,9 @@ import dev.beyonddev.beyondlingo.data.engine.LangEnum
 import dev.beyonddev.beyondlingo.ui.component.LanguageSelector
 import dev.beyonddev.beyondlingo.vm.TranslateUiState
 import dev.beyonddev.beyondlingo.vm.TranslateViewModel
+import dev.beyonddev.beyondlingo.data.AppSettings
+import dev.beyonddev.beyondlingo.data.engine.CustomEngine
+import dev.beyonddev.beyondlingo.data.engine.TranslateEngine
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,9 +129,8 @@ fun TranslateScreen(
                         }
                         Text(
                             text = buildString {
-                                append(engine.displayName)
+                                append(engineLabel(engine, settings))
                                 if (settings.silentAutoTranslate) append(" · 静默")
-                                else if (settings.clipboardWatchEnabled) append(" · 剪贴板")
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -452,6 +454,23 @@ private fun ResultArea(
     }
 }
 
+
+/**
+ * 引擎显示名。
+ *
+ * 自定义引擎会根据用户选中的预设显示具体服务名（如「智谱 GLM」），
+ * 而不是笼统的「自定义引擎」。
+ */
+private fun engineLabel(
+    engine: TranslateEngine,
+    settings: AppSettings,
+): String {
+    return if (engine is CustomEngine) {
+        engine.displayNameFor(settings.configFor(engine.id))
+    } else {
+        engine.displayName
+    }
+}
 private fun copyToClipboard(context: Context, text: String) {
-    dev.beyonddev.beyondlingo.service.SelfWriteMarker.copyToClipboard(context, text)
+    dev.beyonddev.beyondlingo.service.ClipboardWriter.copy(context, text)
 }

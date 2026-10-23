@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.ui.screen
+package dev.beyonddev.beyondlingo.ui.screen
 
 import android.content.Context
 import android.content.Intent
@@ -122,13 +122,13 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(4.dp))
 
-            // ============ 自动翻译总览 ============
-            SectionTitle("自动翻译")
+            // ============ 翻译触发方式 ============
+            SectionTitle("翻译触发方式")
 
             SettingsCard {
                 AutoTranslateSummary(
                     inputDebounce = settings.autoTranslate,
-                    clipboard = settings.clipboardWatchEnabled,
+                    selection = settings.selectionTranslateEnabled,
                     silent = settings.silentAutoTranslate,
                     delayMs = settings.autoTranslateDelayMs,
                     hasOverlay = hasOverlayPermission,
@@ -165,7 +165,9 @@ fun SettingsScreen(
             SettingsCard {
                 SwitchRow(
                     title = "无障碍划词",
-                    subtitle = if (accessibilityEnabled) "已开启" else "需在系统设置中启用无障碍服务",
+                    subtitle = if (accessibilityEnabled)
+                        "已开启，长按选中文字即可翻译"
+                    else "需在系统设置中启用无障碍服务",
                     checked = settings.selectionTranslateEnabled,
                     onCheckedChange = { enabled ->
                         if (enabled && !accessibilityEnabled) {
@@ -186,18 +188,22 @@ fun SettingsScreen(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 SwitchRow(
-                    title = "剪贴板监听",
+                    title = "悬浮窗显示译文",
                     subtitle = if (hasOverlayPermission)
-                        "复制文字后自动翻译"
-                    else "已开启；授予悬浮窗权限后可显示译文浮窗",
-                    checked = settings.clipboardWatchEnabled,
-                    onCheckedChange = { enabled -> viewModel.setClipboardWatch(enabled) },
+                        "划词后在浮窗中显示结果"
+                    else "未授权；结果将显示在通知栏",
+                    checked = hasOverlayPermission,
+                    onCheckedChange = { enabled ->
+                        if (enabled && !hasOverlayPermission) {
+                            requestOverlayPermission(context)
+                        }
+                    },
                 )
 
-                // 悬浮窗权限缺失时只做提示，不阻止开关
+                // 悬浮窗权限缺失时提供跳转
                 if (!hasOverlayPermission) {
                     PermissionHint(
-                        text = "授予悬浮窗权限（可选，用于显示译文）",
+                        text = "授予悬浮窗权限",
                         onClick = { requestOverlayPermission(context) },
                     )
                 }
@@ -206,7 +212,7 @@ fun SettingsScreen(
 
                 SwitchRow(
                     title = "静默自动翻译",
-                    subtitle = "划词或复制后直接翻译，不弹悬浮窗（结果写入通知栏）",
+                    subtitle = "划词后直接翻译，不弹悬浮窗（结果写入通知栏）",
                     checked = settings.silentAutoTranslate,
                     onCheckedChange = viewModel::setSilentAutoTranslate,
                 )
@@ -581,6 +587,7 @@ private fun EngineCard(
                                     baseUrl = preset.baseUrl,
                                     model = preset.defaultModel,
                                     apiPath = preset.apiPath,
+                                    presetName = preset.name,
                                 )
                             )
                         },
@@ -671,11 +678,11 @@ private fun ConfigField(
     )
 }
 
-/** 自动翻译总览：把三级自动翻译的状态一眼看清 */
+/** 自动翻译总览：把各条触发通道的状态一眼看清 */
 @Composable
 private fun AutoTranslateSummary(
     inputDebounce: Boolean,
-    clipboard: Boolean,
+    selection: Boolean,
     silent: Boolean,
     delayMs: Long,
     hasOverlay: Boolean,
@@ -683,7 +690,7 @@ private fun AutoTranslateSummary(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "当前生效的自动翻译方式",
+            text = "当前生效的翻译触发方式",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -697,34 +704,23 @@ private fun AutoTranslateSummary(
 
         AutoItem(
             index = "2",
-            title = "剪贴板监听",
+            title = "无障碍划词",
             detail = when {
-                !clipboard -> "已关闭"
-                silent -> "复制后静默翻译，结果在通知栏"
-                !hasOverlay -> "复制后翻译；无悬浮窗权限，结果在通知栏"
-                else -> "复制后弹悬浮窗显示译文"
+                !selection -> "已关闭"
+                !hasAccessibility -> "已开启，但系统未授权无障碍服务"
+                silent -> "长按选中文字后静默翻译，结果在通知栏"
+                !hasOverlay -> "长按选中文字后翻译；无悬浮窗权限，结果在通知栏"
+                else -> "长按选中文字后弹悬浮窗显示译文"
             },
-            active = clipboard,
+            active = selection && hasAccessibility,
         )
 
-        AutoItem(
-            index = "3",
-            title = "静默全自动",
-            detail = when {
-                !silent -> "已关闭"
-                clipboard && hasOverlay -> "划词/复制后不弹窗，直接出结果"
-                clipboard -> "已开启；需配合剪贴板监听使用"
-                else -> "已开启，但剪贴板监听未开，暂不生效"
-            },
-            active = silent,
-        )
-
-        if (clipboard && !hasAccessibility) {
+        if (selection && !hasAccessibility) {
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "提示：无障碍划词未开启，仅剪贴板通道生效",
+                text = "提示：无障碍服务未启用，划词功能暂不生效",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
             )
         }
     }

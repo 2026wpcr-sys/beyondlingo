@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.vm
+package dev.beyonddev.beyondlingo.vm
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -44,7 +44,6 @@ sealed interface TranslateUiState {
 /** 自动翻译的运行状态，用于设置页展示 */
 data class AutoTranslateStatus(
     val inputDebounceEnabled: Boolean,
-    val clipboardEnabled: Boolean,
     val silentEnabled: Boolean,
     val lastAutoAt: Long = 0L,
 )
@@ -67,7 +66,7 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
     private val _engine = MutableStateFlow<TranslateEngine>(EngineRegistry.get(null))
     val engine: StateFlow<TranslateEngine> = _engine.asStateFlow()
 
-    private val _autoStatus = MutableStateFlow(AutoTranslateStatus(false, false, false))
+    private val _autoStatus = MutableStateFlow(AutoTranslateStatus(false, false))
     val autoStatus: StateFlow<AutoTranslateStatus> = _autoStatus.asStateFlow()
 
     /** 当前操作序号，用于并发隔离（参照 STranslate 的 TranslationOperation） */
@@ -81,7 +80,6 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
                 _engine.value = EngineRegistry.get(s.engineId)
                 _autoStatus.value = AutoTranslateStatus(
                     inputDebounceEnabled = s.autoTranslate && s.autoTranslateDelayMs > 0,
-                    clipboardEnabled = s.clipboardWatchEnabled,
                     silentEnabled = s.silentAutoTranslate,
                     lastAutoAt = _autoStatus.value.lastAutoAt,
                 )
@@ -265,19 +263,6 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSelectionTranslate(enabled: Boolean) {
         viewModelScope.launch { settingsStore.setSelectionTranslate(enabled) }
-    }
-
-    fun setClipboardWatch(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsStore.setClipboardWatch(enabled)
-            // 真正启停前台服务中的剪贴板监听
-            try {
-                dev.beyonddev.beyondlingo.service.FloatingWindowService
-                    .setClipboardWatchEnabled(getApplication(), enabled)
-            } catch (_: Exception) {
-                // 后台启动受限或未授予通知权限时忽略
-            }
-        }
     }
 
     /** C. 静默自动翻译开关 */

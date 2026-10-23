@@ -1,4 +1,4 @@
-package dev.beyonddev.beyondlingo
+﻿package dev.beyonddev.beyondlingo
 
 import android.app.Application
 import dev.beyonddev.beyondlingo.data.SettingsStore
@@ -26,24 +26,6 @@ class BeyondLingoApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        restoreClipboardWatch()
-    }
-
-    /** 进程重启后，若用户之前开启了剪贴板监听，自动恢复 */
-    private fun restoreClipboardWatch() {
-        appScope.launch {
-            try {
-                val settings = SettingsStore(this@BeyondLingoApp).settings.first()
-                if (settings.clipboardWatchEnabled) {
-                    FloatingWindowService.setClipboardWatchEnabled(
-                        this@BeyondLingoApp,
-                        true,
-                    )
-                }
-            } catch (_: Exception) {
-                // 静默失败：可能是后台启动限制
-            }
-        }
     }
 
     companion object {

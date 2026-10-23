@@ -14,11 +14,10 @@
 - **双引擎**：Yandex 免费直连（免配置） / 自定义引擎（智谱 GLM、DeepSeek、硅基流动、Moonshot、Groq、OpenAI）
 - **33 种语言**，支持本地启发式检测源语言
 - **划词翻译**：无障碍服务监听选中文本，悬浮窗展示译文
-- **剪贴板兜底**：复制即翻译，无障碍被 ROM 限制时仍可用
-- **三级自动翻译**：
+- **两级触发**：
   - ① 输入框防抖（停止输入自动翻译）
-  - ② 剪贴板监听（复制即翻译）
-  - ③ 静默全自动（不弹窗，结果直写通知栏）
+  - ② 无障碍划词（长按选中文字即翻译）
+- **静默模式**：划词后不弹窗，结果直写通知栏
 - **翻译历史**：Room 本地存储，可搜索、收藏、复制
 - **原生体验**：Kotlin + Jetpack Compose，单 Activity
 
@@ -80,8 +79,8 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 | `INTERNET` | 翻译请求 | ✅ |
 | `SYSTEM_ALERT_WINDOW` | 悬浮窗显示译文 | 划词需要 |
 | `BIND_ACCESSIBILITY_SERVICE` | 监听选中文本 | 划词需要 |
-| `FOREGROUND_SERVICE` | 剪贴板监听常驻 | 剪贴板需要 |
-| `POST_NOTIFICATIONS` | 前台服务通知 | 剪贴板需要 |
+| `FOREGROUND_SERVICE` | 悬浮窗服务常驻 | 划词需要 |
+| `POST_NOTIFICATIONS` | 悬浮窗/翻译结果通知 | 划词需要 |
 
 ## 文档
 

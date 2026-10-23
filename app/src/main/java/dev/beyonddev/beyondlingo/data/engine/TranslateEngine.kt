@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.data.engine
+package dev.beyonddev.beyondlingo.data.engine
 
 /**
  * 翻译引擎统一接口。
@@ -84,6 +84,11 @@ data class EngineConfig(
     val authPrefix: String = "",
     /** 额外请求头，每行 `key:value` */
     val extraHeaders: String = "",
+    /**
+     * 预设显示名，如「智谱 GLM」「DeepSeek」。
+     * 用户选过预设后记录在此，用于在标题栏/结果卡片上显示具体服务名。
+     */
+    val presetName: String = "",
 ) {
     companion object {
         val EMPTY = EngineConfig()

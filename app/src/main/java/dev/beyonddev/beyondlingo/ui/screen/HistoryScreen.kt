@@ -314,5 +314,5 @@ private fun formatTime(timestamp: Long): String {
 }
 
 private fun copyToClipboard(context: Context, text: String) {
-    dev.beyonddev.beyondlingo.service.SelfWriteMarker.copyToClipboard(context, text)
+    dev.beyonddev.beyondlingo.service.ClipboardWriter.copy(context, text)
 }

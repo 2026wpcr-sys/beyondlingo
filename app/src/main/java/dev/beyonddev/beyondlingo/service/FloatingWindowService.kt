@@ -5,8 +5,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -63,6 +61,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import dev.beyonddev.beyondlingo.Brand
 import dev.beyonddev.beyondlingo.MainActivity
 import dev.beyonddev.beyondlingo.R
 import dev.beyonddev.beyondlingo.data.SettingsStore
@@ -77,17 +76,15 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * 悬浮窗服务：展示划词/剪贴板触发后的译文。
+ * 悬浮窗服务：展示划词翻译结果。
+ *
+ * 由 [SelectionAccessibilityService] 在检测到选中文本时拉起。
  *
  * 用 Compose 渲染内容，通过 [WindowManager] 挂载为
  * `TYPE_APPLICATION_OVERLAY` 悬浮窗。
  *
- * 同时以前台服务运行，用于：
- * 1. 满足 Android 8+ 后台服务要求
- * 2. 让剪贴板监听在后台存活（Android 10+ 限制）
- *
- * 继承 [LifecycleService] 即可获得 Lifecycle / ViewModelStore / SavedStateRegistry
- * 三个 owner，ComposeView 需要它们才能正常工作。
+ * 继承 [LifecycleService] 以获得 Lifecycle / ViewModelStore / SavedStateRegistry
+ * 三个 owner（ComposeView 需要它们）。
  */
 class FloatingWindowService : LifecycleService(),
     ViewModelStoreOwner, SavedStateRegistryOwner {
@@ -104,9 +101,6 @@ class FloatingWindowService : LifecycleService(),
     private lateinit var windowManager: WindowManager
     private var composeView: ComposeView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
-
-    /** 剪贴板监听器，由 ACTION_START_CLIPBOARD 控制启停 */
-    private var clipboardWatcher: ClipboardWatcher? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -133,33 +127,18 @@ class FloatingWindowService : LifecycleService(),
         when (intent?.action) {
             ACTION_TRANSLATE -> {
                 val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
-                if (text.isNotBlank()) showAndTranslate(text)
-            }
-            ACTION_START_CLIPBOARD -> {
-                startClipboardWatch()
-            }
-            ACTION_STOP_CLIPBOARD -> {
-                stopClipboardWatch()
-                // 若悬浮窗也未显示，则停止服务
-                if (composeView == null) stopSelf()
+                if (text.isNotBlank()) {
+                    showAndTranslate(text)
+                } else {
+                    stopSelf()
+                }
             }
             ACTION_DISMISS -> {
                 hideOverlay()
-                if (clipboardWatcher == null) stopSelf()
+                stopSelf()
             }
         }
         return START_STICKY
-    }
-
-    private fun startClipboardWatch() {
-        if (clipboardWatcher != null) return
-        clipboardWatcher = ClipboardWatcher(applicationContext).also { it.start() }
-        updateNotification("剪贴板监听中", "复制任意文字即可翻译")
-    }
-
-    private fun stopClipboardWatch() {
-        clipboardWatcher?.stop()
-        clipboardWatcher = null
     }
 
     // ---------- 悬浮窗 ----------
@@ -198,6 +177,7 @@ class FloatingWindowService : LifecycleService(),
         try {
             windowManager.addView(view, params)
         } catch (_: Exception) {
+            // 权限缺失或窗口被拒
             composeView = null
             layoutParams = null
         }
@@ -233,11 +213,10 @@ class FloatingWindowService : LifecycleService(),
     // ---------- 翻译 ----------
 
     private fun showAndTranslate(text: String) {
-        // 先读设置，决定是否静默
         scope.launch {
             val settings = SettingsStore(applicationContext).settings.first()
 
-            // C. 静默模式：只翻译，不弹窗，结果写通知
+            // 静默模式：只翻译，不弹窗，结果写通知
             if (settings.silentAutoTranslate) {
                 val repo = TranslateRepository(applicationContext)
                 val outcome = repo.translateWithCurrentSettings(text, checkCacheFirst = true)
@@ -247,6 +226,7 @@ class FloatingWindowService : LifecycleService(),
                     is TranslateOutcome.Failure ->
                         updateNotification("翻译失败", outcome.message.take(200))
                 }
+                stopSelf()
                 return@launch
             }
 
@@ -267,6 +247,7 @@ class FloatingWindowService : LifecycleService(),
                 is TranslateOutcome.Success -> {
                     resultText = outcome.text
                     errorText = null
+                    // 无悬浮窗权限时用通知兜底
                     if (composeView == null) {
                         updateNotification(text.take(40), outcome.text.take(200))
                     }
@@ -293,7 +274,7 @@ class FloatingWindowService : LifecycleService(),
 
         val runnable = Runnable {
             hideOverlay()
-            if (clipboardWatcher == null) stopSelf()
+            stopSelf()
         }
         autoDismissRunnable = runnable
         mainHandler.postDelayed(runnable, delayMs)
@@ -301,7 +282,7 @@ class FloatingWindowService : LifecycleService(),
 
     private fun copyResult() {
         if (resultText.isBlank()) return
-        SelfWriteMarker.copyToClipboard(applicationContext, resultText)
+        ClipboardWriter.copy(applicationContext, resultText)
     }
 
     // ---------- Compose 内容 ----------
@@ -434,8 +415,8 @@ class FloatingWindowService : LifecycleService(),
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(contentIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setOngoing(false)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
@@ -455,9 +436,9 @@ class FloatingWindowService : LifecycleService(),
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "划词翻译",
-                NotificationManager.IMPORTANCE_MIN,
+                NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "划词翻译与剪贴板监听的后台运行通知"
+                description = "${Brand.APP_NAME_ZH}的划词翻译结果"
                 setShowBadge(false)
             }
             nm.createNotificationChannel(channel)
@@ -465,12 +446,11 @@ class FloatingWindowService : LifecycleService(),
 
         startForeground(
             NOTIFICATION_ID,
-            buildNotification("无界译 · 运行中", "选中文本或复制文字即可翻译"),
+            buildNotification(Brand.APP_NAME_ZH, "正在翻译…"),
         )
     }
 
     override fun onDestroy() {
-        stopClipboardWatch()
         hideOverlay()
         vmsStore.clear()
         scope.cancel()
@@ -483,35 +463,20 @@ class FloatingWindowService : LifecycleService(),
     }
 
     companion object {
-        const val CHANNEL_ID = "stranslate_overlay"
+        const val CHANNEL_ID = "beyondlingo_overlay"
         const val NOTIFICATION_ID = 1001
 
         const val ACTION_TRANSLATE = "dev.beyonddev.beyondlingo.action.TRANSLATE"
         const val ACTION_DISMISS = "dev.beyonddev.beyondlingo.action.DISMISS"
-        const val ACTION_START_CLIPBOARD = "dev.beyonddev.beyondlingo.action.START_CLIPBOARD"
-        const val ACTION_STOP_CLIPBOARD = "dev.beyonddev.beyondlingo.action.STOP_CLIPBOARD"
         const val EXTRA_TEXT = "extra_text"
 
-        /** 由无障碍服务 / 剪贴板 watcher 调用 */
+        /** 由无障碍服务调用 */
         fun requestTranslate(context: Context, text: String, fromSelection: Boolean) {
             val intent = Intent(context, FloatingWindowService::class.java).apply {
                 action = ACTION_TRANSLATE
                 putExtra(EXTRA_TEXT, text)
                 putExtra("from_selection", fromSelection)
             }
-            startServiceCompat(context, intent)
-        }
-
-        /** 开启/关闭剪贴板监听（由设置页调用） */
-        fun setClipboardWatchEnabled(context: Context, enabled: Boolean) {
-            val action = if (enabled) ACTION_START_CLIPBOARD else ACTION_STOP_CLIPBOARD
-            val intent = Intent(context, FloatingWindowService::class.java).apply {
-                this.action = action
-            }
-            startServiceCompat(context, intent)
-        }
-
-        private fun startServiceCompat(context: Context, intent: Intent) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)

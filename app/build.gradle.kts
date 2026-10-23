@@ -1,9 +1,28 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+
+/**
+ * Release 签名配置。
+ *
+ * 密码与 keystore 路径存放在项目根目录的 keystore.properties 中，
+ * 该文件已被 .gitignore 排除，不会进入版本库。
+ *
+ * 若文件不存在（例如他人克隆仓库后尚未配置），release 构建会跳过签名，
+ * 此时产物为 unsigned APK，不影响 debug 构建。
+ */
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) {
+        keystorePropsFile.inputStream().use { load(it) }
+    }
+}
+val hasSigningConfig = keystoreProps.getProperty("storeFile") != null
 
 android {
     namespace = "dev.beyonddev.beyondlingo"
@@ -19,13 +38,29 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        if (hasSigningConfig) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 开启代码压缩与混淆，显著减小体积
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"

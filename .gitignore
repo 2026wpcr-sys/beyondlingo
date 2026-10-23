@@ -21,10 +21,11 @@ captures/
 *.dex
 *.class
 
-# Keystore (never commit)
+# Keystore & signing config (never commit)
 *.jks
 *.keystore
 keystore.properties
+keys/
 
 # Logs
 *.log

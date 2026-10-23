@@ -1,4 +1,4 @@
-package dev.beyonddev.beyondlingo
+﻿package dev.beyonddev.beyondlingo
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -30,6 +30,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.beyonddev.beyondlingo.ui.screen.HistoryScreen
+import dev.beyonddev.beyondlingo.ui.screen.OcrScreen
 import dev.beyonddev.beyondlingo.ui.screen.SettingsScreen
 import dev.beyonddev.beyondlingo.ui.screen.SplashScreen
 import dev.beyonddev.beyondlingo.ui.screen.TranslateScreen
@@ -41,6 +42,7 @@ object Routes {
     const val TRANSLATE = "translate"
     const val HISTORY = "history"
     const val SETTINGS = "settings"
+    const val OCR = "ocr"
 }
 
 class MainActivity : ComponentActivity() {
@@ -140,6 +142,8 @@ private fun AppNavHost(vm: TranslateViewModel) {
                 viewModel = vm,
                 onOpenHistory = { navController.navigate(Routes.HISTORY) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+
+                onOpenOcr = { navController.navigate(Routes.OCR) },
             )
         }
 
@@ -151,6 +155,16 @@ private fun AppNavHost(vm: TranslateViewModel) {
             )
         }
 
+
+        composable(Routes.OCR) {
+            OcrScreen(
+                onBack = { navController.popBackStack() },
+                onTranslateText = { text ->
+                    vm.translateSilently(text)
+                    navController.popBackStack(Routes.TRANSLATE, inclusive = false)
+                },
+            )
+        }
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 viewModel = vm,

@@ -15,43 +15,12 @@ import android.os.IBinder
 import android.os.Looper
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.ViewModelStore
@@ -296,117 +265,23 @@ class FloatingWindowService : LifecycleService(),
     }
 
     // ---------- Compose 内容 ----------
+    // ---------- Compose 内容 ----------
 
     @Composable
     private fun OverlayContent() {
         MaterialTheme {
-            Column(
-                modifier = Modifier
-                    .width(300.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF1E1E1E))
-                    .pointerInput(Unit) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            moveOverlay(dragAmount.x, dragAmount.y)
-                        }
-                    }
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "翻译",
-                        color = Color(0xFF8AB4F8),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Row {
-                        IconButton(
-                            onClick = { copyResult() },
-                            modifier = Modifier.size(28.dp),
-                            enabled = resultText.isNotBlank(),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "复制",
-                                tint = if (resultText.isNotBlank()) Color(0xFFCCCCCC)
-                                else Color(0xFF555555),
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(4.dp))
-                        IconButton(
-                            onClick = {
-                                hideOverlay()
-                                stopSelf()
-                            },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "关闭",
-                                tint = Color(0xFFCCCCCC),
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                    }
-                }
-
-                Text(
-                    text = sourceText,
-                    color = Color(0xFF9AA0A6),
-                    fontSize = 12.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                ) {
-                    when {
-                        isTranslating -> {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color(0xFF8AB4F8),
-                                )
-                                Text("翻译中…", color = Color(0xFF9AA0A6), fontSize = 13.sp)
-                            }
-                        }
-
-                        errorText != null -> {
-                            Text(
-                                text = errorText.orEmpty(),
-                                color = Color(0xFFFF6B6B),
-                                fontSize = 13.sp,
-                            )
-                        }
-
-                        else -> {
-                            Text(
-                                text = resultText,
-                                color = Color(0xFFE8EAED),
-                                fontSize = 15.sp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 220.dp)
-                                    .verticalScroll(rememberScrollState()),
-                            )
-                        }
-                    }
-                }
-            }
+            dev.beyonddev.beyondlingo.ui.overlay.OverlayContent(
+                sourceText = sourceText,
+                resultText = resultText,
+                isTranslating = isTranslating,
+                errorText = errorText,
+                onCopy = { copyResult() },
+                onClose = {
+                    hideOverlay()
+                    stopSelf()
+                },
+                onDrag = { dx, dy -> moveOverlay(dx, dy) },
+            )
         }
     }
 

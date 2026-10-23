@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,6 +80,7 @@ fun TranslateScreen(
     viewModel: TranslateViewModel,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenOcr: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val input by viewModel.input.collectAsStateWithLifecycle()
@@ -138,6 +140,9 @@ fun TranslateScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenOcr) {
+                        Icon(Icons.Default.Image, contentDescription = "图片取词")
+                    }
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Default.History, contentDescription = "历史")
                     }

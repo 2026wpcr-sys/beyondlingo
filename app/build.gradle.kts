@@ -136,4 +136,13 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    // OCR —— ML Kit 文字识别（拉丁文字模型，随 APK 打包，离线可用）
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // 图片加载（显示待识别图片）
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // 图片选择
+    implementation("androidx.activity:activity-ktx:1.11.0")
 }

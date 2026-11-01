@@ -51,27 +51,38 @@ cd "<workspace>"
 
 ## 三、⛔ 关键凭证（丢失即不可逆）
 
+> **⚠️ 本仓库已公开。凭证的实际值一律不写入版本控制。**
+> 密码、私钥内容、令牌只保存在本机离线位置；本文档只描述「在哪里找」，
+> 不记录「是什么」。新接手的人向仓库所有者索取。
+>
+> 历史提醒：本文档曾以明文记录签名库密码，该提交仍在 git 历史中。
+> 该密码应继续按「已泄露」对待。
+
 ### 1. 签名密钥库（最高优先级）
 
 | 项 | 值 |
 |---|---|
-| 备份位置 | `<keystore-backup-dir>\` |
+| 备份位置 | 工作区外的 `beyondlingo-keystore-backup\` 目录（路径向所有者索取） |
 | 文件名 | `beyondlingo-release.jks` |
 | 别名 | `beyondlingo` |
-| **密码** | `<removed>` |
+| 密码 | `<离线保存，不写入仓库>` |
 | 算法 | RSA 4096，SHA384withRSA |
 | 有效期 | 30 年（10950 天） |
-| 证书 SHA-256 | `<removed>` |
+| 证书 SHA-256 | `<离线保存，不写入仓库>` |
 
 > **丢失后果**：无法更新已发布的应用，用户必须卸载重装（数据全失），只能换包名重发。
 > **必须离线备份到至少两个位置。**
+>
+> **构建时如何取用**：把密码放进本机 `local.properties`（已在 `.gitignore` 中）
+> 或环境变量 `KEYSTORE_PASSWORD` / `KEY_PASSWORD`，由 `build.gradle.kts`
+> 读取；不要硬编码进源码。
 
 ### 2. SSH 私钥
 
 | 项 | 值 |
 |---|---|
-| 路径 | `<ssh-key-path>` |
-| 指纹 | `SHA256:<removed>` |
+| 路径 | 用户主目录下的 `.ssh\id_ed25519`（具体用户名向所有者索取） |
+| 指纹 | `<离线保存，不写入仓库>` |
 | 用途 | 向 GitHub 推送代码 |
 | 远端 | `git@github.com:2026wpcr-sys/beyondlingo.git` |
 
@@ -80,11 +91,11 @@ cd "<workspace>"
 ### 3. gh CLI（已装）
 
 ```
-<gh-path>
+<本机工具目录>\gh.exe
 ```
 
-已通过 `gh auth login`（Web 浏览器授权）登录 `2026wpcr-sys`，用于创建 Release。
-凭据缓存在 `%APPDATA%\GitHub CLI\`。
+已通过 `gh auth login` 登录 `2026wpcr-sys`，用于创建 Release。
+凭据缓存在本机 `%APPDATA%\GitHub CLI\`。
 
 ---
 

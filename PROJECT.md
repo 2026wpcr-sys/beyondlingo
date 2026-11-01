@@ -996,7 +996,7 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 `local.properties`（**不提交到 Git**）
 
 ```properties
-sdk.dir=E\:\\<sdk-path>
+sdk.dir=<SDK 路径>        # Windows 反斜杠需转义，如 D\:\\Android\\sdk
 ```
 
 ### 首次启动引导

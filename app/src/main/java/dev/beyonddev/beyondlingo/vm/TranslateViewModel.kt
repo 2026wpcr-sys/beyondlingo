@@ -12,6 +12,7 @@ import dev.beyonddev.beyondlingo.data.engine.LangEnum
 import dev.beyonddev.beyondlingo.data.engine.TranslateEngine
 import dev.beyonddev.beyondlingo.data.engine.TranslateOutcome
 import dev.beyonddev.beyondlingo.util.Debouncer
+import dev.beyonddev.beyondlingo.util.DirectionResolver
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,8 @@ sealed interface TranslateUiState {
         val engineName: String,
         /** 是否由自动翻译触发（用于 UI 提示） */
         val autoTriggered: Boolean = false,
+        /** 本次实际使用的目标语言（双语模式下随方向变化） */
+        val targetLang: LangEnum? = null,
     ) : TranslateUiState
     data class Error(
         val input: String,
@@ -154,9 +157,15 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         val engine = EngineRegistry.get(s.engineId)
         val config = s.configFor(s.engineId)
 
-        // 源语言：用户选了「自动检测」就交给引擎判断，不要用本地启发式覆盖。
-        // 本地检测只用于 UI 上的参考提示，作为请求参数会误判（尤其中西混排的聊天文本）。
-        val source = s.defaultSourceLang
+        // 方向解析：
+        // - 双语模式：按输入内容自动判定「母语→对方」还是「对方→母语」
+        // - 普通模式：沿用用户手选的源/目标语言
+        // 本地检测只用于二分类方向判定，不做 33 种语言的通用识别。
+        val (source, target) = if (s.bilingualMode) {
+            DirectionResolver.resolve(text, s.homeLang, s.foreignLang)
+        } else {
+            s.defaultSourceLang to s.defaultTargetLang
+        }
 
         val started = System.currentTimeMillis()
 
@@ -165,7 +174,7 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
             repo.translate(
                 text = text,
                 source = source,
-                target = s.defaultTargetLang,
+                target = target,
                 engineId = s.engineId,
                 config = config,
                 checkCacheFirst = checkCacheFirst,
@@ -192,6 +201,7 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
                 detectedLang = outcome.detectedSource ?: source.takeIf { it != LangEnum.Auto },
                 engineName = engine.displayName,
                 autoTriggered = auto,
+                targetLang = target,
             )
 
             is TranslateOutcome.Failure -> TranslateUiState.Error(
@@ -217,6 +227,13 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
     fun swapLanguages() {
         viewModelScope.launch {
             val s = _settings.value
+            if (s.bilingualMode) {
+                // 双语模式下「互换」= 交换母语与对方语言，
+                // 方向仍由文本内容自动判定，这一步只改变配对关系。
+                settingsStore.setHomeLang(s.foreignLang)
+                settingsStore.setForeignLang(s.homeLang)
+                return@launch
+            }
             val from = s.defaultSourceLang
             val to = s.defaultTargetLang
             if (from == LangEnum.Auto) return@launch
@@ -224,6 +241,33 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
             settingsStore.setTargetLang(from)
         }
         retranslateIfPossible()
+    }
+
+    // ---------- 双语模式 ----------
+
+    /** 开关双语模式（自动判定方向） */
+    fun setBilingualMode(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setBilingualMode(enabled) }
+        retranslateIfPossible()
+    }
+
+    /** 设置母语 */
+    fun setHomeLang(lang: LangEnum) {
+        viewModelScope.launch { settingsStore.setHomeLang(lang) }
+        retranslateIfPossible()
+    }
+
+    /** 设置对方语言 */
+    fun setForeignLang(lang: LangEnum) {
+        viewModelScope.launch { settingsStore.setForeignLang(lang) }
+        retranslateIfPossible()
+    }
+
+    /** 双语模式下预览当前文本会走哪个方向（供 UI 显示「中→西」或「西→中」） */
+    fun previewDirection(text: String): Pair<LangEnum, LangEnum>? {
+        val s = _settings.value
+        if (!s.bilingualMode || text.isBlank()) return null
+        return DirectionResolver.resolve(text, s.homeLang, s.foreignLang)
     }
 
     fun setEngine(engineId: String) {

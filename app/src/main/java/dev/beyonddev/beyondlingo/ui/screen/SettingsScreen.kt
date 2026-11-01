@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,7 +61,9 @@ import dev.beyonddev.beyondlingo.data.engine.CustomEnginePresets
 import dev.beyonddev.beyondlingo.data.engine.EngineConfig
 import dev.beyonddev.beyondlingo.data.engine.EnginePreset
 import dev.beyonddev.beyondlingo.data.engine.EngineRegistry
+import dev.beyonddev.beyondlingo.data.engine.LangEnum
 import dev.beyonddev.beyondlingo.data.engine.TranslateEngine
+import dev.beyonddev.beyondlingo.ui.component.LanguageSelector
 import dev.beyonddev.beyondlingo.vm.TranslateViewModel
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.ui.text.style.TextAlign
@@ -142,6 +145,30 @@ fun SettingsScreen(
             SectionTitle("翻译行为")
 
             SettingsCard {
+                SwitchRow(
+                    title = "双向自动判定方向",
+                    subtitle = if (settings.bilingualMode)
+                        "母语进来译成对方语言，对方语言进来译成母语"
+                    else
+                        "手动指定源语言与目标语言（当前模式）",
+                    checked = settings.bilingualMode,
+                    onCheckedChange = viewModel::setBilingualMode,
+                )
+                if (settings.bilingualMode) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    LanguageRow(
+                        title = "我的母语",
+                        selected = settings.homeLang,
+                        onSelect = viewModel::setHomeLang,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    LanguageRow(
+                        title = "对方语言",
+                        selected = settings.foreignLang,
+                        onSelect = viewModel::setForeignLang,
+                    )
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 SwitchRow(
                     title = "输入后自动翻译",
                     subtitle = "停止输入 ${settings.autoTranslateDelayMs}ms 后自动触发",
@@ -515,9 +542,37 @@ private fun SwitchRow(
     }
 }
 
+/**
+ * 语言选择行：标题在左，选中的语言在右，点击弹选择器。
+ * 用于双语模式的「我的母语 / 对方语言」。
+ */
 @Composable
-private fun PermissionHint(text: String, onClick: () -> Unit) {
+private fun LanguageRow(
+    title: String,
+    selected: LangEnum,
+    onSelect: (LangEnum) -> Unit,
+) {
     Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.width(12.dp))
+        Box(modifier = Modifier.widthIn(max = 200.dp)) {
+            LanguageSelector(
+                selected = selected,
+                onSelect = onSelect,
+                includeAuto = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionHint(text: String, onClick: () -> Unit) {    Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
     ) {

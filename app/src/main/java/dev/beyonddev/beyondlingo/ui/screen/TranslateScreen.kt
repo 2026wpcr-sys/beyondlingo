@@ -172,39 +172,98 @@ fun TranslateScreen(
                 .imePadding(),
         ) {
             // 语言选择行
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                LanguageSelector(
-                    selected = settings.defaultSourceLang,
-                    onSelect = viewModel::setSourceLang,
-                    includeAuto = true,
-                    modifier = Modifier.weight(1f),
-                )
-
-                IconButton(
-                    onClick = viewModel::swapLanguages,
-                    enabled = settings.defaultSourceLang != LangEnum.Auto,
-                    modifier = Modifier.size(36.dp),
+            if (settings.bilingualMode) {
+                // 双语模式：只声明「母语 ⇄ 对方语言」，方向由输入内容自动判定
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.SwapHoriz,
-                        contentDescription = "互换语言",
-                        modifier = Modifier.size(20.dp),
-                        tint = if (settings.defaultSourceLang != LangEnum.Auto)
-                            MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    LanguageSelector(
+                        selected = settings.homeLang,
+                        onSelect = viewModel::setHomeLang,
+                        includeAuto = false,
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    IconButton(
+                        onClick = viewModel::swapLanguages,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SwapHoriz,
+                            contentDescription = "交换母语与对方语言",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+
+                    LanguageSelector(
+                        selected = settings.foreignLang,
+                        onSelect = viewModel::setForeignLang,
+                        includeAuto = false,
+                        modifier = Modifier.weight(1f),
                     )
                 }
 
-                LanguageSelector(
-                    selected = settings.defaultTargetLang,
-                    onSelect = viewModel::setTargetLang,
-                    includeAuto = false,
-                    modifier = Modifier.weight(1f),
-                )
+                // 当前方向提示：中文进来译成对方语言，对方语言进来译成中文
+                val direction = viewModel.previewDirection(input)
+                if (direction != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = "${direction.first.labelZh} → ${direction.second.labelZh}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "自动判定方向",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LanguageSelector(
+                        selected = settings.defaultSourceLang,
+                        onSelect = viewModel::setSourceLang,
+                        includeAuto = true,
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    IconButton(
+                        onClick = viewModel::swapLanguages,
+                        enabled = settings.defaultSourceLang != LangEnum.Auto,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SwapHoriz,
+                            contentDescription = "互换语言",
+                            modifier = Modifier.size(20.dp),
+                            tint = if (settings.defaultSourceLang != LangEnum.Auto)
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                        )
+                    }
+
+                    LanguageSelector(
+                        selected = settings.defaultTargetLang,
+                        onSelect = viewModel::setTargetLang,
+                        includeAuto = false,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
 
             Spacer(Modifier.height(12.dp))

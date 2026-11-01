@@ -7,6 +7,7 @@ import dev.beyonddev.beyondlingo.data.engine.EngineConfig
 import dev.beyonddev.beyondlingo.data.engine.EngineRegistry
 import dev.beyonddev.beyondlingo.data.engine.LangEnum
 import dev.beyonddev.beyondlingo.data.engine.TranslateOutcome
+import dev.beyonddev.beyondlingo.util.DirectionResolver
 import kotlinx.coroutines.flow.first
 
 /**
@@ -143,13 +144,32 @@ class TranslateRepository(context: Context) {
         val engineId = settings.engineId
         val config = settings.configFor(engineId)
 
+        // 双语模式：按输入内容自动决定方向，不再依赖用户手动选的源语言
+        val (source, target) = if (settings.bilingualMode) {
+            DirectionResolver.resolve(text, settings.homeLang, settings.foreignLang)
+        } else {
+            settings.defaultSourceLang to settings.defaultTargetLang
+        }
+
         return translate(
             text = text,
-            source = settings.defaultSourceLang,
-            target = settings.defaultTargetLang,
+            source = source,
+            target = target,
             engineId = engineId,
             config = config,
             checkCacheFirst = checkCacheFirst,
         )
     }
+
+    /**
+     * 解析本次翻译应采用的方向（供 UI 展示「检测到 XX → XX」）。
+     *
+     * @return 有序对 (源语言, 目标语言)
+     */
+    fun resolveDirection(text: String, settings: AppSettings): Pair<LangEnum, LangEnum> =
+        if (settings.bilingualMode) {
+            DirectionResolver.resolve(text, settings.homeLang, settings.foreignLang)
+        } else {
+            settings.defaultSourceLang to settings.defaultTargetLang
+        }
 }

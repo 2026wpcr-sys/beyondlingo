@@ -31,6 +31,19 @@ data class AppSettings(
     val defaultSourceLang: LangEnum = LangEnum.Auto,
     val defaultTargetLang: LangEnum = LangEnum.ChineseSimplified,
 
+    /**
+     * 双语模式：只声明「母语」与「对方语言」，由 [dev.beyonddev.beyondlingo.util.DirectionResolver]
+     * 按输入内容自动判定翻译方向。
+     *
+     * 开启后 [defaultSourceLang] / [defaultTargetLang] 不再直接决定方向，
+     * 但仍作为「最近一次有效方向」被写回，便于退出双语模式时恢复。
+     */
+    val bilingualMode: Boolean = false,
+    /** 双语模式下的母语（通常是中文） */
+    val homeLang: LangEnum = LangEnum.ChineseSimplified,
+    /** 双语模式下的对方语言 */
+    val foreignLang: LangEnum = LangEnum.Spanish,
+
     /** 输入后自动翻译 */
     val autoTranslate: Boolean = true,
     /** 自动翻译防抖延迟 */
@@ -71,6 +84,11 @@ class SettingsStore(private val context: Context) {
             defaultSourceLang = LangEnum.fromCode(prefs[KEY_SOURCE_LANG]),
             defaultTargetLang = LangEnum.fromCode(prefs[KEY_TARGET_LANG])
                 .takeIf { it != LangEnum.Auto } ?: LangEnum.ChineseSimplified,
+            bilingualMode = prefs[KEY_BILINGUAL] ?: false,
+            homeLang = LangEnum.fromCode(prefs[KEY_HOME_LANG])
+                .takeIf { it != LangEnum.Auto } ?: LangEnum.ChineseSimplified,
+            foreignLang = LangEnum.fromCode(prefs[KEY_FOREIGN_LANG])
+                .takeIf { it != LangEnum.Auto } ?: LangEnum.Spanish,
             autoTranslate = prefs[KEY_AUTO_TRANSLATE] ?: true,
             autoTranslateDelayMs = prefs[KEY_AUTO_DELAY] ?: 800L,
             copyAfterTranslate = prefs[KEY_COPY_AFTER] ?: false,
@@ -101,6 +119,9 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setSourceLang(lang: LangEnum) = edit { it[KEY_SOURCE_LANG] = lang.code }
     suspend fun setTargetLang(lang: LangEnum) = edit { it[KEY_TARGET_LANG] = lang.code }
+    suspend fun setBilingualMode(enabled: Boolean) = edit { it[KEY_BILINGUAL] = enabled }
+    suspend fun setHomeLang(lang: LangEnum) = edit { it[KEY_HOME_LANG] = lang.code }
+    suspend fun setForeignLang(lang: LangEnum) = edit { it[KEY_FOREIGN_LANG] = lang.code }
     suspend fun setAutoTranslate(enabled: Boolean) = edit { it[KEY_AUTO_TRANSLATE] = enabled }
     suspend fun setAutoTranslateDelay(ms: Long) = edit { it[KEY_AUTO_DELAY] = ms }
     suspend fun setCopyAfterTranslate(enabled: Boolean) = edit { it[KEY_COPY_AFTER] = enabled }
@@ -155,6 +176,9 @@ class SettingsStore(private val context: Context) {
         val KEY_ENGINE_ID = stringPreferencesKey("engine_id")
         val KEY_SOURCE_LANG = stringPreferencesKey("source_lang")
         val KEY_TARGET_LANG = stringPreferencesKey("target_lang")
+        val KEY_BILINGUAL = booleanPreferencesKey("bilingual_mode")
+        val KEY_HOME_LANG = stringPreferencesKey("home_lang")
+        val KEY_FOREIGN_LANG = stringPreferencesKey("foreign_lang")
         val KEY_AUTO_TRANSLATE = booleanPreferencesKey("auto_translate")
         val KEY_AUTO_DELAY = longPreferencesKey("auto_delay_ms")
         val KEY_COPY_AFTER = booleanPreferencesKey("copy_after")

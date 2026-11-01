@@ -37,10 +37,10 @@
 ### 构建
 
 ```powershell
-$env:JAVA_HOME = "<jdk-21-path>"
-$env:ANDROID_HOME = "<sdk-path>"
+$env:JAVA_HOME = "<JDK 21 路径>"
+$env:ANDROID_HOME = "<SDK 路径>"
 
-cd <workspace>
+cd beyondlingo
 .\gradlew.bat assembleDebug
 ```
 

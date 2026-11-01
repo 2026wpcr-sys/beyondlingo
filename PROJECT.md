@@ -1,4 +1,4 @@
-﻿# 无界译 AI · BeyondLingo AI — 项目设计文档
+# 无界译 AI · BeyondLingo AI — 项目设计文档
 
 > **跨越语言边界，让沟通自由发生。**
 > *Break Language Barriers. Speak Freely.*
@@ -960,11 +960,11 @@ fun onInputChanged(text: String) {
 
 ### 环境要求
 
-| 工具 | 版本 | 本机路径 |
+| 工具 | 版本 | 路径 |
 | --- | --- | --- |
-| JDK | 21 | `<jdk-21-path>` |
-| Android SDK | 36 | `<sdk-path>` |
-| Build Tools | 36.0.0 | `<sdk-path>\build-tools\36.0.0` |
+| JDK | 21 | `<JDK 21 路径>` |
+| Android SDK | 36 | `<SDK 路径>` |
+| Build Tools | 36.0.0 | `<SDK 路径>\build-tools\36.0.0` |
 | Gradle | Wrapper | 自动下载 |
 
 ### 首次构建

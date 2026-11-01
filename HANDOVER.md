@@ -19,30 +19,30 @@
 
 | 项 | 值 |
 |---|---|
-| 项目根目录 | `<workspace>` |
-| Android SDK | `<sdk-path>` |
-| JDK | `<jdk-21-path>` |
+| 项目根目录 | `<工作区>`（本机 checkout 位置，向所有者索取） |
+| Android SDK | `<SDK 路径>` |
+| JDK | `<JDK 21 路径>` |
 | Gradle | 8.14.3（wrapper 已内置） |
 | AGP / Kotlin | 8.13.0 / 2.2.20 |
 | 编译 SDK | 36（minSdk 26，targetSdk 36） |
 | 包名 | `dev.beyonddev.beyondlingo`（debug 为 `.debug`） |
-| 模拟器 AVD | `<avd-path>` |
+| 模拟器 AVD | `<AVD 路径>`（可选，非必需） |
 | 真机 | realme RMX3823 · Android 16 · arm64-v8a |
-| GitHub 仓库 | https://github.com/2026wpcr-sys/beyondlingo （**Private**） |
+| GitHub 仓库 | https://github.com/2026wpcr-sys/beyondlingo （Public） |
 | Release | https://github.com/2026wpcr-sys/beyondlingo/releases/tag/v1.1.0 |
 
 ### 必设环境变量（构建前）
 
 ```powershell
-$env:JAVA_HOME = "<jdk-21-path>"
-$env:ANDROID_HOME = "<sdk-path>"
-$env:ANDROID_SDK_ROOT = "<sdk-path>"
+$env:JAVA_HOME = "<JDK 21 路径>"
+$env:ANDROID_HOME = "<SDK 路径>"
+$env:ANDROID_SDK_ROOT = "<SDK 路径>"
 ```
 
 ### 构建命令
 
 ```powershell
-cd "<workspace>"
+cd "<工作区>"
 .\gradlew.bat assembleDebug        # 61.76 MB
 .\gradlew.bat assembleRelease      # 43.43 MB
 ```
@@ -194,7 +194,7 @@ Chrome/微信自绘渲染，文字选区不通过无障碍暴露。
 ## 六、代码结构
 
 ```
-<workspace>/
+beyondlingo/
 ├── app/src/main/java/dev/beyonddev/beyondlingo/
 │   ├── BeyondLingoApp.kt          Application + Brand 常量
 │   ├── MainActivity.kt            导航 + PROCESS_TEXT/SEND 接收
@@ -259,7 +259,7 @@ d2d025c feat: 无界译 AI v1.0.0 初始提交
 #    BeyondLingoApp.kt → Brand.VERSION 同步改
 
 # 2. 构建
-cd "<workspace>"
+cd "<工作区>"
 .\gradlew.bat assembleRelease
 
 # 3. 准备发布产物
@@ -276,8 +276,8 @@ git push
 git tag -a v1.2.0 -m "无界译 AI 1.2.0"
 git push origin v1.2.0
 
-# 6. 发 Release
-$gh = "<gh-path>"
+# 6. 发 Release（gh 已在 PATH 时直接用 gh，否则填绝对路径）
+$gh = "gh"
 & $gh release create v1.2.0 `
   "dist\BeyondLingo-AI-1.2.0.apk" `
   "dist\BeyondLingo-AI-1.2.0.apk.sha256" `
@@ -298,7 +298,7 @@ $gh = "<gh-path>"
 **必须重新启用**：
 
 ```powershell
-$adbExe = "<sdk-path>\platform-tools\adb.exe"
+$adbExe = "<SDK 路径>\platform-tools\adb.exe"
 & $adbExe shell settings put secure enabled_accessibility_services "null"
 & $adbExe shell settings put secure accessibility_enabled 0
 Start-Sleep -Seconds 2
@@ -393,4 +393,4 @@ GitHub 网页不支持 43MB 附件，必须用 gh CLI。
 ---
 
 **交接人**：无界者（BeyondDev）
-**文档位置**：`<workspace>\HANDOVER.md`
+**文档位置**：仓库根目录 `HANDOVER.md`

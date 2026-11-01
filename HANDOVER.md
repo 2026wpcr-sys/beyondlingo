@@ -2,7 +2,7 @@
 
 > **用途**：开启新对话时，把本文档交给 AI 作为上下文，即可无缝接手。
 >
-> **最后更新**：2026-10-23 · 版本 1.1.0
+> **最后更新**：2026-10-31 · 版本 1.2.0
 
 ---
 
@@ -29,7 +29,7 @@
 | 模拟器 AVD | `<AVD 路径>`（可选，非必需） |
 | 真机 | realme RMX3823 · Android 16 · arm64-v8a |
 | GitHub 仓库 | https://github.com/2026wpcr-sys/beyondlingo （Public） |
-| Release | https://github.com/2026wpcr-sys/beyondlingo/releases/tag/v1.1.0 |
+| Release | https://github.com/2026wpcr-sys/beyondlingo/releases/tag/v1.2.0 |
 
 ### 必设环境变量（构建前）
 
@@ -124,7 +124,27 @@ cd "<工作区>"
 - **PROCESS_TEXT 菜单** — App 端链路正确，但 Android 11+ 包可见性限制导致第三方 App 菜单不显示
 - **ACTION_SEND 分享** — 已声明 `SEND` intent-filter
 
-### 4.3 其他功能
+### 4.3 双向自动判定方向（v1.2.0 新增）
+
+用户只声明一次配对关系，之后方向由输入内容自动决定：
+
+```
+我的母语    简体中文
+对方语言    西班牙语
+```
+
+| 输入 | 自动译成 |
+|---|---|
+| 我明天到你那边 | 西班牙语 |
+| Mañana llego a tu casa | 简体中文 |
+
+- 实现：`util/DirectionResolver.kt`
+- 开关：设置 → 翻译行为 → 「双向自动判定方向」
+- 覆盖三条路径：主界面输入 / 悬浮球与划词 / 静默模式
+- 关闭开关时行为与 1.1.0 完全一致
+- 主界面会实时显示当前判定方向（`简体中文 → 西班牙语 · 自动判定方向`）
+
+### 4.4 其他功能
 
 - 输入框防抖自动翻译（800ms）
 - 静默模式（结果写通知栏，不弹窗）
@@ -174,11 +194,13 @@ Chrome/微信自绘渲染，文字选区不通过无障碍暴露。
 结果窗自动消失时原本调 `stopSelf()`，服务一停球也没了。
 → 统一用 `stopSelfIfNoBubble()`。
 
-### 5.5 源语言交给引擎判断
+### 5.5 源语言交给引擎判断（普通模式）
 
 早期用本地 `LanguageDetector.detect()` 预判源语言，导致西班牙语被误判为中文
 （聊天文本里混着「星期二」「10:40」等字符），翻译返回原文。
-→ 现在源语言直接传 `Auto` 给引擎。本地检测器 `LanguageDetector` 保留但未被调用。
+→ 普通模式下源语言直接传 `Auto` 给引擎，`LanguageDetector` 不参与。
+
+> 注意：v1.2.0 的双语模式是**例外**，见 5.8。那里必须做本地判定，否则无法决定方向。
 
 ### 5.6 同语言保护
 
@@ -188,6 +210,25 @@ Chrome/微信自绘渲染，文字选区不通过无障碍暴露。
 
 `app/proguard-rules.pro` 中保留了 `vm.**`、`ui.**`、`data.ocr.**`、`com.google.mlkit.**`。
 **曾因漏掉导致 release 版 OCR 类被 R8 移除，一进图片取词页就崩。新增包时务必检查。**
+
+### 5.8 双语模式为什么用二分类而非通用检测
+
+双向场景只有两种可能（母语 / 对方语言），做二分类比 33 种语言的通用识别更准。
+
+判定规则（`DirectionResolver`）：
+
+```
+母语是中文      → 看汉字占比，≥0.3 判为母语
+对方语言是中文  → 取反
+双方都不是中文  → 退回 LanguageDetector，检测不出则按「对方语言」处理
+```
+
+**关键细节：标点与数字不计入分母。** 这是 5.5 那个坑的正面解法——
+「Mañana llego a las 10:40」里数字和标点会稀释汉字占比，
+把它们排除后，判定只看真正的字母字符。
+
+阈值 0.3 而非 0.5：允许中英混排（「OK 我明天到」）仍判为中文。
+调整阈值只需改 `DirectionResolver.HAN_RATIO_THRESHOLD` 一个常量。
 
 ---
 
@@ -215,7 +256,8 @@ beyondlingo/
 │   │   ├── overlay/FloatingBubble.kt         悬浮球
 │   │   ├── screen/{Translate,History,Settings,Ocr,Splash}Screen.kt
 │   │   └── theme/{Theme,Type}.kt
-│   ├── util/{Debouncer,TriggerGate,LanguageDetector}.kt
+│   ├── util/{Debouncer,TriggerGate,LanguageDetector,DirectionResolver}.kt
+│   │                              DirectionResolver: 双语模式方向判定（二分类）
 │   └── vm/{Translate,History,Ocr}ViewModel.kt
 ├── app/proguard-rules.pro
 ├── NOTICE.md                      二次开发声明（必读）
@@ -231,13 +273,19 @@ beyondlingo/
 
 ```
 分支：main（与 origin/main 同步）
-Tag ：v1.1.0（已推送）
-提交：9bfb52d release: 版本号升至 1.1.0（versionCode 2）
+Tag ：v1.2.0（已推送，Release 已发布）
+提交：e57adbc feat: 双向自动判定方向（v1.2.0）
 ```
 
 ### 提交历史
 
 ```
+e57adbc feat: 双向自动判定方向（v1.2.0）          8 files, +336 -39
+bd45f74 docs: PROJECT 中 sdk.dir 示例路径改为占位符
+6b1ecd1 docs: 本机绝对路径替换为占位符，目录名对齐仓库名
+4240093 docs: 泛化 SSH 私钥路径描述
+ea2650e docs: HANDOVER 移除明文凭证，改为离线索取说明
+c0afa1b （v1.1.0 之后的 HEAD，仓库转公开前的最后一版）
 9bfb52d release: 版本号升至 1.1.0（versionCode 2）
 381ac49 feat: 悬浮球取词（复制后点球翻译）+ 划词白名单
 36330b6 fix: 修复 release 混淆导致 OCR 类被移除 + 文档更新
@@ -287,6 +335,51 @@ $gh = "gh"
 ```
 
 > ⚠️ GitHub 网页上传 43MB APK 会失败，**必须用 gh CLI**。
+
+### 实测过的两个坑
+
+**1. 提交信息带 BOM**
+
+`Out-File -Encoding utf8` 在 PowerShell 5.1 下会写入 BOM，导致 commit subject
+开头多一个不可见字符（`﻿feat: ...`）。改用无 BOM 写法：
+
+```powershell
+[System.IO.File]::WriteAllText("$PWD\.git\MSG_TMP", $msg, (New-Object System.Text.UTF8Encoding($false)))
+git commit -F '.git\MSG_TMP'
+```
+
+验证：`$subj = git log -1 --pretty=%s; [int][char]$subj[0]` 应为 102（`f`）。
+
+**2. `git tag -a` 需要 committer 身份**
+
+只在命令行用 `-c user.name=...` 临时传参不够，`git tag -a` 仍会失败：
+`Committer identity unknown`。需要落进仓库配置（仅本仓库，不影响全局）：
+
+```powershell
+git config user.name "2026wpcr-sys"
+git config user.email "2026wpcr-sys@users.noreply.github.com"
+```
+
+### 构建前的签名准备
+
+`keystore.properties` 与 `keys/` 均在 `.gitignore` 中，克隆仓库后需要手动放回：
+
+```
+项目根目录\keystore.properties      ← 从 beyondlingo-keystore-backup 复制
+项目根目录\keys\beyondlingo-release.jks
+```
+
+缺失时 release 构建不会报错，而是产出 **unsigned APK**（见 `build.gradle.kts`
+的 `hasSigningConfig` 判断）。装到手机上会提示未签名。
+
+验证签名正确：
+
+```powershell
+$env:JAVA_HOME = "<JDK 21>"
+& "<SDK>\build-tools\36.0.0\apksigner.bat" verify --print-certs app-release.apk
+```
+
+证书 SHA-256 应匹配离线保存的值。
 
 ---
 
@@ -349,22 +442,26 @@ GitHub 网页不支持 43MB 附件，必须用 gh CLI。
 
 ## 十、待办事项
 
-### 10.1 分发方式（用户尚未决定）
+### 10.1 分发方式 —— ✅ 已定：C（开源）
 
-| 选项 | 说明 |
-|---|---|
-| A | 直接把 `dist\BeyondLingo-AI-1.1.0.apk` 发给朋友 |
-| B | 建公开仓库只放 APK（源码保持私有） |
-| C | 把现有仓库转公开（开源） |
-| D | 上架应用商店（需软著、备案等） |
+仓库已于 2026-10-31 转为 Public：https://github.com/2026wpcr-sys/beyondlingo
+
+同时完成了凭证清理：HANDOVER 中的明文密码 / 证书指纹 / 私钥路径已移除，
+改为「离线保存，向所有者索取」。
+
+> ⚠️ **遗留风险**：git 历史（`c0afa1b` 及更早）中仍有明文签名密码。
+> 该密码应视同已泄露。缓解措施是 keystore 文件本体不在仓库内（`keys/` 已 gitignore），
+> 但若 keystore 以任何方式流出，两者合并即构成完整伪造能力。
+> 彻底清除需 `git filter-repo` 重写历史（会导致所有 commit hash 变化），尚未执行。
 
 ### 10.2 可选增强
 
 - 中文 OCR（`text-recognition-chinese:16.0.1`，+20MB）
-- 应用内检查更新（查 GitHub Release）
+- **应用内检查更新（查 GitHub Release）** —— 现在有了公开 Release，可以做了
 - TTS 朗读译文
 - 悬浮球位置记忆
 - 划词白名单扩充（需先实测确认能拿到文本）
+- 语言对预设（保存多套「母语 ⇄ 对方语言」，一键切换）
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **用途**：开启新对话时，把本文档交给 AI 作为上下文，即可无缝接手。
 >
-> **最后更新**：2026-10-31 · 版本 1.2.0
+> **最后更新**：2026-10-31 · 版本 1.3.0
 
 ---
 
@@ -29,7 +29,7 @@
 | 模拟器 AVD | `<AVD 路径>`（可选，非必需） |
 | 真机 | realme RMX3823 · Android 16 · arm64-v8a |
 | GitHub 仓库 | https://github.com/2026wpcr-sys/beyondlingo （Public） |
-| Release | https://github.com/2026wpcr-sys/beyondlingo/releases/tag/v1.2.0 |
+| Release | https://github.com/2026wpcr-sys/beyondlingo/releases/tag/v1.3.0 |
 
 ### 必设环境变量（构建前）
 
@@ -55,8 +55,12 @@ cd "<工作区>"
 > 密码、私钥内容、令牌只保存在本机离线位置；本文档只描述「在哪里找」，
 > 不记录「是什么」。新接手的人向仓库所有者索取。
 >
-> 历史提醒：本文档曾以明文记录签名库密码，该提交仍在 git 历史中。
-> 该密码应继续按「已泄露」对待。
+> **历史事件（2026-10-31 已处理）**：本文档曾以明文记录签名库密码，
+> 仓库转公开后该提交（`c0afa1b`）暴露。已采取的措施：
+> ① 重写全部 git 历史并强推，分支上不再包含明文；
+> ② 生成全新签名密钥，旧密钥归档为 `beyondlingo-keystore-REVOKED-*` 并标记废弃；
+> ③ 旧提交在 GitHub 上仍可能通过直接 SHA 访问（等待平台 GC 或 Support 清理），
+>    因此**旧密码永久视为已泄露**。
 
 ### 1. 签名密钥库（最高优先级）
 
@@ -65,17 +69,20 @@ cd "<工作区>"
 | 备份位置 | 工作区外的 `beyondlingo-keystore-backup\` 目录（路径向所有者索取） |
 | 文件名 | `beyondlingo-release.jks` |
 | 别名 | `beyondlingo` |
-| 密码 | `<离线保存，不写入仓库>` |
+| 密码 | `<离线保存，不写入仓库>`（2026-10-31 已更换，32 位随机） |
 | 算法 | RSA 4096，SHA384withRSA |
 | 有效期 | 30 年（10950 天） |
 | 证书 SHA-256 | `<离线保存，不写入仓库>` |
+| 生效版本 | 1.3.0 起 |
+
+**已废弃的旧密钥**：`beyondlingo-keystore-REVOKED-20261031-220359\`
+证书指纹 `956abf0f...65a51bb`，仅用于 1.0.0–1.2.0，**严禁再用**。
 
 > **丢失后果**：无法更新已发布的应用，用户必须卸载重装（数据全失），只能换包名重发。
 > **必须离线备份到至少两个位置。**
 >
-> **构建时如何取用**：把密码放进本机 `local.properties`（已在 `.gitignore` 中）
-> 或环境变量 `KEYSTORE_PASSWORD` / `KEY_PASSWORD`，由 `build.gradle.kts`
-> 读取；不要硬编码进源码。
+> **构建时如何取用**：`keystore.properties`（项目根目录，已 gitignore）中填写，
+> `build.gradle.kts` 读取后传给 signingConfig。不要硬编码进源码。
 
 ### 2. SSH 私钥
 
@@ -273,29 +280,29 @@ beyondlingo/
 
 ```
 分支：main（与 origin/main 同步）
-Tag ：v1.2.0（已推送，Release 已发布）
-提交：e57adbc feat: 双向自动判定方向（v1.2.0）
+Tag ：v1.3.0（已推送，Release 已发布）
+提交：见下方历史
 ```
 
-### 提交历史
+> ⚠️ **2026-10-31 重写过历史**：为清除明文凭证，全部 commit hash 已变更。
+> 网上任何旧的 hash 引用都已失效，不要照抄旧记录。
+
+### 提交历史（重写后）
 
 ```
-e57adbc feat: 双向自动判定方向（v1.2.0）          8 files, +336 -39
-bd45f74 docs: PROJECT 中 sdk.dir 示例路径改为占位符
-6b1ecd1 docs: 本机绝对路径替换为占位符，目录名对齐仓库名
-4240093 docs: 泛化 SSH 私钥路径描述
-ea2650e docs: HANDOVER 移除明文凭证，改为离线索取说明
-c0afa1b （v1.1.0 之后的 HEAD，仓库转公开前的最后一版）
-9bfb52d release: 版本号升至 1.1.0（versionCode 2）
-381ac49 feat: 悬浮球取词（复制后点球翻译）+ 划词白名单
-36330b6 fix: 修复 release 混淆导致 OCR 类被移除 + 文档更新
-d21ae98 feat: 悬浮窗样式优化 + OCR 图片取词
-ef4dddf build: 配置 release 签名与代码混淆
-df25d30 docs: 更新划词翻译说明，补充自绘控件长按支持
-162d73d fix: 划词翻译在真机上打通（WhatsApp 等自绘应用）
-d07e44d fix: 移除剪贴板监听，强化无障碍划词；修复自定义引擎显示名
-d2d025c feat: 无界译 AI v1.0.0 初始提交
+6089bd1 docs: 新增交接文档 HANDOVER.md，dist/ 加入 gitignore   ← 根提交
+1e58c80 docs: HANDOVER 移除明文凭证，改为离线索取说明
+62cfb91 docs: 泛化 SSH 私钥路径描述
+20a5620 docs: 本机绝对路径替换为占位符，目录名对齐仓库名
+1d092fa docs: PROJECT 中 sdk.dir 示例路径改为占位符
+954f00c feat: 双向自动判定方向（v1.2.0）          8 files, +336 -39
+2e2f14e docs: 同步 v1.2.0 状态到 HANDOVER 与 README
 ```
+
+> 说明：仓库的 git 历史从 `c0afa1b`（首次公开前的交接文档提交）开始，
+> 更早的 `stranslate-android` 本地开发历史没有推送过。
+> v1.0.0 与 v1.1.0 的 tag 指向重写前已推送的旧对象，
+> 若需要追溯请以 Release 页面的 APK 与 SHA256 为准。
 
 ---
 
@@ -312,24 +319,24 @@ cd "<工作区>"
 
 # 3. 准备发布产物
 $hash = (Get-FileHash "app\build\outputs\apk\release\app-release.apk" -Algorithm SHA256).Hash.ToLower()
-Copy-Item "app\build\outputs\apk\release\app-release.apk" "dist\BeyondLingo-AI-1.2.0.apk"
-"$hash  BeyondLingo-AI-1.2.0.apk" | Out-File "dist\BeyondLingo-AI-1.2.0.apk.sha256" -Encoding ascii
+Copy-Item "app\build\outputs\apk\release\app-release.apk" "dist\BeyondLingo-AI-1.3.0.apk"
+"$hash  BeyondLingo-AI-1.3.0.apk" | Out-File "dist\BeyondLingo-AI-1.3.0.apk.sha256" -Encoding ascii
 
 # 4. 提交推送
 git add -A
-git commit -m "release: 版本号升至 1.2.0"
+git commit -m "release: 版本号升至 1.3.0"
 git push
 
 # 5. 打 tag
-git tag -a v1.2.0 -m "无界译 AI 1.2.0"
-git push origin v1.2.0
+git tag -a v1.3.0 -m "无界译 AI 1.3.0"
+git push origin v1.3.0
 
 # 6. 发 Release（gh 已在 PATH 时直接用 gh，否则填绝对路径）
 $gh = "gh"
-& $gh release create v1.2.0 `
-  "dist\BeyondLingo-AI-1.2.0.apk" `
-  "dist\BeyondLingo-AI-1.2.0.apk.sha256" `
-  --title "无界译 AI 1.2.0" `
+& $gh release create v1.3.0 `
+  "dist\BeyondLingo-AI-1.3.0.apk" `
+  "dist\BeyondLingo-AI-1.3.0.apk.sha256" `
+  --title "无界译 AI 1.3.0" `
   --notes-file "dist\RELEASE_NOTES.md" `
   --latest
 ```
@@ -438,6 +445,29 @@ realme 会限制应用后台状态。悬浮球服务需保持前台通知，用�
 
 GitHub 网页不支持 43MB 附件，必须用 gh CLI。
 
+### 9.8 换签名后无法覆盖安装（1.3.0 起）
+
+1.3.0 换了签名证书，旧版（1.1.0 / 1.2.0）**不能直接覆盖升级**，会报
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
+
+必须：
+```
+卸载旧版 → 安装新版 → 重新授权无障碍/悬浮窗 → 重新配置引擎 API Key
+```
+
+卸载会清空翻译历史与设置，这是 Android 的机制，无法绕过。
+
+**验证签名是否为新证书**：
+```powershell
+$env:JAVA_HOME = "<JDK 21>"
+& "<SDK>\build-tools\36.0.0\apksigner.bat" verify --print-certs app-release.apk
+# SHA-256 应与离线记录的当前证书一致（1.3.0 起为新证书）
+```
+
+**如果忘了换 keystore 就构建**：`validateSigningRelease` 可能显示 `UP-TO-DATE`
+（Gradle 缓存），产出的 APK 仍是旧签名。**必须用 apksigner 实际验证证书指纹**，
+不能只看构建成功。
+
 ---
 
 ## 十、待办事项
@@ -449,10 +479,34 @@ GitHub 网页不支持 43MB 附件，必须用 gh CLI。
 同时完成了凭证清理：HANDOVER 中的明文密码 / 证书指纹 / 私钥路径已移除，
 改为「离线保存，向所有者索取」。
 
-> ⚠️ **遗留风险**：git 历史（`c0afa1b` 及更早）中仍有明文签名密码。
-> 该密码应视同已泄露。缓解措施是 keystore 文件本体不在仓库内（`keys/` 已 gitignore），
-> 但若 keystore 以任何方式流出，两者合并即构成完整伪造能力。
-> 彻底清除需 `git filter-repo` 重写历史（会导致所有 commit hash 变化），尚未执行。
+### 10.1.1 凭证泄露事件处理记录（2026-10-31）
+
+**事件**：仓库转 Public 时，`HANDOVER.md` 的初始版本（`c0afa1b`）含明文签名密码、
+证书 SHA-256、SSH 指纹。该提交在公开状态下可被访问。
+
+**已执行**：
+
+| 步骤 | 操作 | 结果 |
+|---|---|---|
+| 1 | `git filter-repo --replace-text` 重写全部历史 | 7 个 commit 全部重写，hash 变更 |
+| 2 | 强推覆盖远端 | `--force --prune origin --all` + `--force --tags` |
+| 3 | 本地 `reflog expire` + `gc --prune=now` | 旧对象本地已清除 |
+| 4 | 生成新签名密钥（RSA 4096 / 32 位随机密码） | 新证书指纹已离线记录 |
+| 5 | 旧密钥归档为 `beyondlingo-keystore-REVOKED-*` | 标记废弃，仅留作旧包验证 |
+| 6 | 版本升到 1.3.0（versionCode 4）重新签名发布 | 用户需卸载重装 |
+
+**仍未完成 / 需要注意**：
+
+> ⚠️ **旧提交在 GitHub 上仍可通过直接 SHA 访问。**
+> 实测 `GET raw.githubusercontent.com/.../c0afa1b.../HANDOVER.md` 返回 200，
+> 仍能读到明文密码。GitHub 只清理不可达对象在内部 GC 时，时间不确定。
+>
+> **建议**：向 GitHub Support 提交 purging 请求
+> （https://support.github.com/contact，类别 Repository → Remove data），
+> 附上要清除的 commit SHA。通常 1–3 个工作日处理。
+>
+> 无论如何，**旧密码永久视为已泄露**，因为密码与 keystore 文件分离
+> （`keys/` 从未提交），单独密码不构成伪造能力，但已不具备任何保密价值。
 
 ### 10.2 可选增强
 

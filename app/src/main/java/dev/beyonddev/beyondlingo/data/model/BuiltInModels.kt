@@ -23,16 +23,33 @@ package dev.beyonddev.beyondlingo.data.model
  */
 object BuiltInModels {
 
-    /** Kaggle 数据集：BeyondLingo Models（Public，Remote Files 导入自 HF 官方仓库） */
-    private const val KAGGLE_BASE =
-        "https://www.kaggle.com/api/v1/datasets/download/mackalex/beyondlingo-models"
+    /**
+     * 模型文件的直链前缀。
+     *
+     * 当前用 HuggingFace 官方仓库 `csukuangfj/sherpa-onnx-whisper-base`
+     * （k2-fsa 作者本人发布，多语种，含 int8 encoder/decoder + tokens.txt）。
+     *
+     * 实测（真机 + curl）：
+     * - `Range: bytes=0-99` → 206 Partial Content
+     * - `Accept-Ranges: bytes`、有 Content-Length（进度条可算百分比）
+     * - 29MB 文件 2.1 秒拉完
+     * - 三个文件的 SHA-256 与官方 GitHub Release
+     *   `sherpa-onnx-whisper-base.tar.bz2` 完全一致（逐个比对过）
+     *
+     * 若要换成 Kaggle 分发，把这里改成
+     * `https://www.kaggle.com/api/v1/datasets/download/<owner>/<slug>`，
+     * 并给每个文件 URL 追加 `?raw=true`（否则 Kaggle 会返回 compressed/xxx.zip
+     * 临时包裹，不是原样文件）。
+     */
+    private const val MODEL_BASE =
+        "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main"
 
     /**
      * 内置 manifest 的 JSON。
      *
      * 指向 `csukuangfj/sherpa-onnx-whisper-base`（k2-fsa 作者官方 HF 仓库）
-     * 经 Kaggle 数据集分发的 Whisper base int8。多语种（中/英/西），
-     * 自带 lang 语言检测 —— 双向同传的方向路由依赖它。
+     * 的 Whisper base int8。多语种（中/英/西），自带 lang 语言检测 ——
+     * 双向同传的方向路由依赖它。
      *
      * SHA-256 与官方 Release 的 `sherpa-onnx-whisper-base.tar.bz2` 一致（已实测比对）。
      *
@@ -50,19 +67,19 @@ object BuiltInModels {
       "files": [
         {
           "key": "encoder",
-          "url": "${KAGGLE_BASE}/base-encoder.int8.onnx?raw=true",
+          "url": "${MODEL_BASE}/base-encoder.int8.onnx",
           "sha256": "0b8fb1304b6109976038efff5ace81720e00386f3ff6b54ee8c75291ca0a1e11",
           "sizeBytes": 29120534
         },
         {
           "key": "decoder",
-          "url": "${KAGGLE_BASE}/base-decoder.int8.onnx?raw=true",
+          "url": "${MODEL_BASE}/base-decoder.int8.onnx",
           "sha256": "9759d217388a01b3a4c7c15533201067b48ae819c4daafc8624e64b9409dc02d",
           "sizeBytes": 130672026
         },
         {
           "key": "tokens",
-          "url": "${KAGGLE_BASE}/base-tokens.txt?raw=true",
+          "url": "${MODEL_BASE}/base-tokens.txt",
           "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
           "sizeBytes": 816730
         }

@@ -32,6 +32,15 @@ class ModelDownloader(context: Context) {
     private companion object {
         const val TAG = "ModelDownloader"
         const val DONE_MARKER = ".done"
+
+        /** 清单来源标记文件；与 manifest.json 同级 */
+        const val SOURCE_MARKER = "manifest.source"
+
+        /** 来源：用户填写的云空间地址 */
+        const val SOURCE_USER = "user"
+
+        /** 来源：App 内置清单 */
+        const val SOURCE_BUILTIN = "builtin"
     }
 
     private val root = File(context.filesDir, "models").apply { mkdirs() }
@@ -175,27 +184,35 @@ class ModelDownloader(context: Context) {
                 // 落盘时去掉 BOM：本地缓存要被 org.json 直接解析
                 File(root, "manifest.json")
                     .writeText(body.trim().removePrefix("\uFEFF").trim())
+                // 标记来源：用户显式配置的地址，优先级高于内置清单
+                markUserSource()
                 manifest
             }
         }
     }
 
     /**
-     * 读取可用清单：优先本地缓存（用户自己的云空间），否则回退内置清单。
+     * 读取可用清单。
      *
-     * 回退内置是必须的 —— 内置清单不会经过 fetchManifest()，不会落盘，
-     * 若只读缓存，App 重启后同传就找不到模型了（真机实测过这个坑）。
+     * 来源优先级（真机踩过的坑）：
+     * 1. 缓存标记为 `user` → 用它（用户显式填了云空间地址，用户的显式选择优先）
+     * 2. 缓存标记为 `builtin` → 用它
+     * 3. 缓存**没有标记** → 视为历史遗留（早期 debug 测试时落盘的清单，
+     *    可能指向旧模型如 whisper-tiny），**用内置清单覆盖**
+     * 4. 完全没有缓存 → 用内置清单，并落盘（保证后续流程与用户地址同构）
      *
-     * 回退时会把内置清单落盘，保证后续流程（modelId 目录、isReady 判定）
-     * 与「用户填地址拉取」完全同构。
+     * 第 3 条是关键：不加这个判断，装了 release 版但设备上留有 debug 测试
+     * 缓存时，会加载到旧模型而不是内置的新模型。
      */
     fun cachedManifest(): ModelManifest? {
-        val cached = runCatching {
-            val f = File(root, "manifest.json")
-            if (!f.exists()) return null
-            ModelManifestParser.parse(f.readText()).getOrNull()
-        }.getOrNull()
-        if (cached != null) return cached
+        val cachedFile = File(root, "manifest.json")
+        val sourceFile = File(root, SOURCE_MARKER)
+        val source = runCatching { sourceFile.readText().trim() }.getOrNull()
+
+        if (cachedFile.exists() && source == SOURCE_USER) {
+            runCatching { ModelManifestParser.parse(cachedFile.readText()).getOrNull() }
+                .getOrNull()?.let { return it }
+        }
         return persistBuiltInManifest()
     }
 
@@ -207,8 +224,17 @@ class ModelDownloader(context: Context) {
         val m = BuiltInModels.manifest()
         root.mkdirs()
         File(root, "manifest.json").writeText(BuiltInModels.MANIFEST_JSON.trim())
+        File(root, SOURCE_MARKER).writeText(SOURCE_BUILTIN)
         m
     }.getOrNull()
+
+    /** 记录清单来源为「用户地址」 */
+    private fun markUserSource() {
+        runCatching {
+            root.mkdirs()
+            File(root, SOURCE_MARKER).writeText(SOURCE_USER)
+        }
+    }
 
     private fun sha256(f: File): String {
         val md = MessageDigest.getInstance("SHA-256")

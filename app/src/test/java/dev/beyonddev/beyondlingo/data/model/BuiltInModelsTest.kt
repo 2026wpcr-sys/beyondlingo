@@ -39,13 +39,16 @@ class BuiltInModelsTest {
     }
 
     @Test
-    fun `URL 必须是 https 且带 raw=true`() {
+    fun `URL 必须是 https 且不能带 query`() {
         BuiltInModels.manifest().models.first().files.forEach { f ->
             assertTrue("${f.key} 必须用 https", f.url.startsWith("https://"))
+            // 内置用 HF 直链，不带 query。若将来换成 Kaggle，
+            // 需给每个 URL 追加 ?raw=true（否则会拿到 compressed/xxx.zip）
             assertTrue(
-                "${f.key} 必须带 ?raw=true，否则 Kaggle 会返回 zip 包裹",
-                f.url.contains("?raw=true"),
+                "${f.key} 不应带 query 参数",
+                !f.url.contains('?'),
             )
+            assertTrue("${f.key} 应指向官方仓库", f.url.contains("sherpa-onnx-whisper-base"))
         }
     }
 

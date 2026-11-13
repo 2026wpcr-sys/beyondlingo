@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置。
+
+  生产模型分发走 HTTPS（用户自己的云空间），不需要明文。
+  这里只为本地调试放开回环地址：用 `adb reverse tcp:8000 tcp:8000`
+  把设备 127.0.0.1:8000 转发到开发机，用来验证「下载→校验→加载」全链路。
+
+  只放行 localhost / 127.0.0.1，不影响任何外部域名的 HTTPS 强制策略。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

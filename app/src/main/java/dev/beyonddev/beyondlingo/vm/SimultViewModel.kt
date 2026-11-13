@@ -12,9 +12,12 @@ import dev.beyonddev.beyondlingo.data.TranslateRepository
 import dev.beyonddev.beyondlingo.data.asr.AsrEngine
 import dev.beyonddev.beyondlingo.data.asr.AsrUpdate
 import dev.beyonddev.beyondlingo.data.asr.AudioRecorder
+import dev.beyonddev.beyondlingo.data.asr.BidirectionalResolver
+import dev.beyonddev.beyondlingo.data.asr.BidirectionalSession
 import dev.beyonddev.beyondlingo.data.asr.PunctuationEngine
 import dev.beyonddev.beyondlingo.data.asr.TtsEngine
 import dev.beyonddev.beyondlingo.data.asr.WavUtil
+import dev.beyonddev.beyondlingo.data.asr.WhisperEngine
 import dev.beyonddev.beyondlingo.data.engine.EngineConfig
 import dev.beyonddev.beyondlingo.data.engine.EngineRegistry
 import dev.beyonddev.beyondlingo.data.engine.LangEnum
@@ -43,6 +46,10 @@ data class SubtitleLine(
     val translated: String? = null,
     val translating: Boolean = true,
     val failed: Boolean = false,
+    /** 双向模式下这句是谁说的；单向模式恒为 UNKNOWN */
+    val side: BidirectionalResolver.Side = BidirectionalResolver.Side.UNKNOWN,
+    /** 方向来源文案，如 "中文 → 西班牙语" */
+    val directionLabel: String = "",
 )
 
 data class SimultUiState(
@@ -53,6 +60,14 @@ data class SimultUiState(
     /** 已确认的字幕段 */
     val lines: List<SubtitleLine> = emptyList(),
     val error: String? = null,
+    /** 双向模式（Whisper + VAD），false 表示单向流式 */
+    val bidirectional: Boolean = false,
+    /** VAD 判定当前正在说话 */
+    val speaking: Boolean = false,
+    /** 双向模式的左侧（我方）语言 */
+    val leftLang: LangEnum = LangEnum.ChineseSimplified,
+    /** 双向模式的右侧（对方）语言 */
+    val rightLang: LangEnum = LangEnum.Spanish,
 )
 
 /**
@@ -72,6 +87,9 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = AsrEngine(app)
     private val punctuation = PunctuationEngine(app)
     private val tts = TtsEngine(app)
+    private val whisper = WhisperEngine(app)
+    private val resolver = BidirectionalResolver()
+    private var bidiSession: BidirectionalSession? = null
     private val downloader = dev.beyonddev.beyondlingo.data.model.ModelDownloader(app)
 
     private var recorder: AudioRecorder? = null
@@ -147,11 +165,116 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stop() {
+        bidiSession?.stop()
+        bidiSession = null
         recorder?.stop()
         recorder = null
         replaying = false
         stopForegroundService()
-        _state.update { it.copy(running = false, partial = "") }
+        _state.update { it.copy(running = false, partial = "", speaking = false) }
+    }
+
+    // ---- 双向同传（Whisper + VAD）----
+
+    /**
+     * 启动双向同传：left = 我方语言，right = 对方语言。
+     *
+     * 依赖云端下发的 Whisper 多语种模型（manifest kind="asr-offline"）。
+     * 模型未就绪时明确报错，不做静默降级——因为用中文模型硬跑西语只会出乱码。
+     */
+    fun startBidirectional(left: LangEnum, right: LangEnum) {
+        if (_state.value.running || _state.value.loading) return
+        if (left == right) {
+            _state.update { it.copy(error = "两侧语言不能相同") }
+            return
+        }
+
+        refreshExternalModel()
+        resolver.leftLanguage = left
+        resolver.rightLanguage = right
+        resolver.reset()
+
+        _state.update {
+            it.copy(
+                loading = true,
+                error = null,
+                leftLang = left,
+                rightLang = right,
+                bidirectional = true,
+            )
+        }
+
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { whisper.initialize() }
+            if (!ok) {
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = "多语种语音模型未就绪。请在「模型」页下载 Whisper 模型" +
+                            "（清单 kind 填 asr-offline），再回到这里启动。",
+                    )
+                }
+                return@launch
+            }
+
+            val s = settingsStore.settings.first()
+            engineId = EngineRegistry.DEFAULT_ENGINE_ID
+            engineConfig = s.configFor(engineId)
+
+            val session = BidirectionalSession(
+                context = getApplication(),
+                whisper = whisper,
+                repo = repo,
+                resolver = resolver,
+                engineId = engineId,
+                engineConfig = engineConfig,
+                scope = viewModelScope,
+                onEvent = { ev -> handleBidiEvent(ev) },
+            )
+            bidiSession = session
+            session.start()
+            startForegroundService()
+            _state.update { it.copy(loading = false, running = true) }
+        }
+    }
+
+    private fun handleBidiEvent(ev: BidirectionalSession.Event) {
+        when (ev) {
+            is BidirectionalSession.Event.Speaking ->
+                _state.update { it.copy(speaking = ev.speaking) }
+
+            is BidirectionalSession.Event.Recognized -> {
+                val line = SubtitleLine(
+                    segmentId = ev.segmentId,
+                    original = ev.text,
+                    side = ev.side,
+                    directionLabel = ev.directionLabel,
+                )
+                _state.update { it.copy(lines = it.lines + line) }
+                publishToOverlay()
+            }
+
+            is BidirectionalSession.Event.Translated -> {
+                _state.update { st ->
+                    st.copy(
+                        lines = st.lines.map {
+                            if (it.segmentId == ev.segmentId) {
+                                it.copy(
+                                    translated = ev.text,
+                                    translating = false,
+                                    failed = ev.failed,
+                                )
+                            } else it
+                        },
+                    )
+                }
+                publishToOverlay()
+                if (ttsEnabled && !ev.failed) ev.text?.let { tts.speak(it) }
+            }
+
+            is BidirectionalSession.Event.Error ->
+                _state.update { it.copy(error = ev.message) }
+        }
     }
 
     /**
@@ -220,6 +343,19 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
             val tok = downloader.pathOf(asrEntry, "tokens")
             if (enc != null && dec != null && joi != null && tok != null) {
                 AsrEngine.ExternalPaths(enc, dec, joi, tok, asrEntry.name)
+            } else null
+        } else null
+
+        // 多语种（Whisper）—— 双向同传用，只有 encoder/decoder/tokens 三件套
+        val offlineEntry = manifest?.models?.firstOrNull {
+            it.kind == "asr-offline" && downloader.isReady(it)
+        }
+        whisper.externalPaths = if (offlineEntry != null) {
+            val enc = downloader.pathOf(offlineEntry, "encoder")
+            val dec = downloader.pathOf(offlineEntry, "decoder")
+            val tok = downloader.pathOf(offlineEntry, "tokens")
+            if (enc != null && dec != null && tok != null) {
+                WhisperEngine.ExternalPaths(enc, dec, tok, offlineEntry.name)
             } else null
         } else null
 

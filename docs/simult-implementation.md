@@ -277,6 +277,98 @@ APK 体积：177.1 MB（含 sherpa so + 模型 assets + ffmpeg-kit + media3）
 首次点击顶部图标无响应 —— 启动页（SplashScreen）期间点击被吞。
 不影响使用，但如果要打磨可在 splash 期间屏蔽交互或让 splash 更快退出。
 
+## 第四批：双向同传（中文 ⇄ 西班牙语）+ 双向状态机
+
+> 用户需求：**我说中文对方看西语字幕，对方说西语我要中文**。
+
+### 为什么必须换 Whisper（observed，官方模型清单核实）
+
+sherpa-onnx 官方**流式** ASR 模型的语言只有：中文、英文、中英双语、韩语、法语、孟加拉语、俄语。
+**没有西班牙语。** 社区的 bookbot 西语模型是**音素级**（输出 IPA，不适合直接喂翻译）。
+
+因此双向同传的识别侧改用 **Whisper**（多语种 + 自带语言检测 + 自带标点）。
+
+### Whisper tiny 真机实测（RMX3823 / arm64-v8a / SDK 36）
+
+模型：`sherpa-onnx-whisper-tiny` int8 = encoder 12.34MB + decoder 85.69MB + tokens 0.78MB = **98.8MB**
+
+| 样本 | 输入 | 输出 | lang | RTF |
+|---|---|---|---|---|
+| 英语（自带） | AFTER EARLY NIGHTFALL… | After early nightfall, the yellow lamps would light up here and there the squalid quarter of the brothels. | en | 0.079 |
+| **西语** | Buenos dias, como estas? Me alegra mucho verte hoy. | **Buenos días, ¿cómo estás? Me alegra mucho verte hoy.** | es | 0.066 |
+| 中文 | 今天天气不错，我们下午一起去看电影吧。 | 今天天气不错我们下午一起去看电影吧 | zh | 0.063 |
+
+关键收益：
+- 西语识别**完全正确**，且自动补上正字法（`días` `¿cómo estás?`）
+- `OfflineRecognizerResult.lang` 直接给出 en/es/zh —— **这就是双向方向路由的依据**
+- Whisper 自带标点与大小写，补上了 Zipformer 缺标点的短板
+- 模型加载 939ms；RTF 0.063–0.079，余量 12–15 倍
+
+> 局限：测试音频是在线 TTS 合成音（干净、无口音、无底噪），真实人声会更差。
+> 这只是**可行性下限**，真实场景需真人复核。
+
+### 新增/改造的代码
+
+| 文件 | 职责 |
+|---|---|
+| `data/asr/SherpaExternalLoader.kt` | 增加 `offlineRecognizerOrNull`（`OfflineRecognizer_newFromFile` 在 JNI 符号表中已核实） |
+| `data/asr/WhisperEngine.kt` | OfflineRecognizer 封装，输出 `Result(text, lang)`；支持 assets / 外部路径双模式 |
+| `data/asr/SimpleVad.kt` | 能量 VAD 切段（零依赖零体积，避免再加一个模型文件）；speechRms 0.012 / silence 650ms / minSpeech 320ms / maxSegment 15s |
+| `data/asr/BidirectionalResolver.kt` | 左右语言槽 + 方向判定 + **UNKNOWN 继承上一轮**（照搬翻译鸥 `inheritMatchingRecognizingLanguage` 思路） |
+| `data/asr/BidirectionalSession.kt` | 采集线程只做 VAD → Channel → 独立协程做识别+翻译（不阻塞采集） |
+| `vm/SimultViewModel.kt` | `startBidirectional(left, right)`、事件分发、`SubtitleLine.side/directionLabel` |
+| `ui/screen/SimultScreen.kt` | `DirectionBar` 语言对选择（我方 ⇄ 对方）、字幕带「我方/对方」标签 |
+
+### 云分发全链路真机验证（observed）
+
+用 `adb reverse tcp:8000 tcp:8000` + 开发机 `python -m http.server 8000` 模拟云空间：
+
+```
+拉取模型列表 → 找到 1 个模型（v1） / Whisper tiny 多语种 / asr-offline · 3 个文件
+点下载 → 传输 90MB → SHA-256 校验通过 → 「已就绪」
+设备侧文件：encoder.onnx 12937772 / decoder.onnx 89855401 / tokens.txt 816730 / .done
+```
+
+模型加载（**反射 newFromFile 从云端绝对路径**）：
+```
+SherpaExternalLoader: OfflineRecognizer loaded from file, ptr=-5476376622775525056
+WhisperEngine: whisper=Whisper tiny 多语种（中/西/英） loaded in 487 ms
+```
+
+方向路由：
+```
+BidiSession: skip unresolved: lang='en' text='I'm a Jew'      ← 不匹配中/西且无上一轮 → 跳过
+BidiSession: seg#0 lang=zh side=LEFT inherited=false asr=198ms text='就黏黏'
+```
+
+真实对话音频下的实际输出（截图 `bidi-cn.png`）：
+
+| 中文识别 | 西语译文 |
+|---|---|
+| 他都不知道我們現在的 | Él ni siquiera sabe lo que somos ahora |
+| 是个神价的马上的信也到期的跟咖了 | Tiene un precio divino, y si no lo crees de inmediato, caducará. |
+| 我相信期待的鱗 | Creo en la escala de expectativas |
+
+中文识别质量**明显优于** 14M Zipformer（繁体的「們」「鱗」都识别对了）。
+
+### 本批修掉的三个真 bug
+
+1. **`NetworkOnMainThreadException`** —— `fetchManifest` 用同步 OkHttp `execute()`，
+   在 `viewModelScope`（Main 调度器）里直接调用。改为 `suspend` + `withContext(Dispatchers.IO)`。
+   （`download()` 本来就有 `flowOn(Dispatchers.IO)`，无需改。）
+2. **manifest 带 BOM 解析失败** —— PowerShell `Set-Content -Encoding UTF8` 会写 BOM，
+   `org.json` 直接抛异常且 message 为 null（极难排查）。
+   修法：`ModelManifestParser.parse` 先剥 `\uFEFF`，落盘时也剥掉；
+   并加 `require(clean.startsWith("{"))` 让错误可读。
+3. **异常 message 为 null 时 UI 显示「拉取失败：null」** —— 加 `describe(t)` 兜底。
+
+### 待验证
+
+- **西语侧的真实语音识别质量**：本批只验了中文侧 + TTS 合成的西语。
+  需要真人说西语复核（Whisper tiny 在真人西语上的表现）。
+- **面对面 UI**：翻译鸥有 `faceToFace` 模式（手机放桌上两人各看一半），本项目尚未实现，
+  当前是单一列表 + 方向标签。
+
 ## 未完成 / 下一步
 
 - **真机 arm64 复测**（当前只在 x86_64 模拟器跑通）

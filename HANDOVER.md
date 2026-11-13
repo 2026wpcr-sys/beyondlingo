@@ -215,6 +215,21 @@ cd "<工作区>"
 - `asrprobe` 独立模块：sherpa-onnx 性能与能力验证工具（包名 `dev.beyonddev.asrprobe`，
   应用名 ASR Probe，与主应用零共享业务代码）
 
+**v1.4.0 第二批：双向同传（中文 ⇄ 西班牙语）**
+
+- 官方 sherpa-onnx **流式** ASR 模型没有西班牙语（只有中/英/中英双语/韩/法/孟加拉/俄）。
+  社区的 bookbot 西语模型是**音素级**（输出 IPA），不能直接喂翻译。
+  → 识别侧改用 **Whisper**（多语种 + 自带 `lang` 语言检测 + 自带标点）
+- 真机实测 tiny int8：西语识别完全正确（自动补 `días` `¿cómo estás?`），
+  `lang` 返回 en/es/zh 准确，RTF 0.063–0.079，模型加载 939ms
+- `data/asr/WhisperEngine.kt` — OfflineRecognizer 封装，输出 `Result(text, lang)`
+- `data/asr/SimpleVad.kt` — 能量 VAD 切段（零依赖零体积）
+- `data/asr/BidirectionalResolver.kt` — 左右语言槽 + 方向判定 + **UNKNOWN 继承上一轮**
+  （照搬翻译鸥 `inheritMatchingRecognizingLanguage` 思路）
+- `data/asr/BidirectionalSession.kt` — 采集线程只做 VAD，识别+翻译在独立协程
+- `ui/screen/SimultScreen.kt` — `DirectionBar`（我方 ⇄ 对方）+ 字幕「我方/对方」标签
+- release 只留 arm64-v8a：APK **155.9MB → 87.2MB**（x86_64 那套 so ~65MB 只为模拟器存在）
+
 ---
 
 ## 五、🔑 关键技术决策（改代码前必读）
@@ -660,6 +675,59 @@ MANAGE_OVERLAY_PERMISSION → APPLICATION_DETAILS_SETTINGS → 提示手动路�
 
 SplashScreen 展示期间，顶部图标点击无响应。不影响使用，
 若要打磨可在 splash 期间屏蔽交互，或让 splash 更快退出。
+
+---
+
+### 9.15 abiFilters 写在 defaultConfig 里去不掉 x86_64
+
+想给 release 只留 arm64-v8a（省 ~65MB），在 `defaultConfig.ndk.abiFilters` 里写了
+`arm64-v8a`，然后在 `buildType.release.ndk.abiFilters` 里写 `arm64-v8a`——
+**x86_64 依然被打进 APK**（实测 155.9MB，ABIs 仍显示两个）。
+
+原因：`abiFilters` 在两个层级是**追加**关系，不是覆盖。`defaultConfig` 的列表
+会应用到所有变体，`buildType` 里再写只是继续追加。
+
+**正确做法**：把 `abiFilters` 只写在 `buildType` 里，不要放 `defaultConfig`：
+
+```kotlin
+buildTypes {
+    release { ndk { abiFilters += listOf("arm64-v8a") } }   // 只剩 arm64-v8a
+    debug   { ndk { abiFilters += listOf("arm64-v8a", "x86_64") } }  // 模拟器可跑
+}
+```
+
+改完 APK 从 155.9MB → 87.2MB（libs 129.56 → 60.89MB）。
+
+---
+
+### 9.16 manifest 带 BOM 导致解析失败且无错误信息
+
+`ModelManifestParser.parse` 用 `org.json` 解析。Windows 上用 PowerShell
+`Set-Content -Encoding UTF8` 或记事本保存的 JSON **带 UTF-8 BOM**，
+`org.json` 直接抛异常，而且 **`JSONException.getMessage()` 返回 null**，
+UI 上只能看到「拉取失败：null」，极难定位。
+
+**修法**（已在 `ModelManifestParser.parse` 与 `ModelDownloader.fetchManifest` 落盘处）：
+```kotlin
+val clean = text.trim().removePrefix("\uFEFF").trim()
+require(clean.startsWith("{")) { "manifest 不是合法 JSON 对象" }
+```
+
+同时 `ModelManagerViewModel` 加了 `describe(t)` 兜底，异常无 message 时
+回退到 `cause.message` 或类名。
+
+---
+
+### 9.17 fetchManifest 在主线程抛 NetworkOnMainThreadException
+
+`ModelDownloader.fetchManifest` 用同步 OkHttp `execute()`，
+被 `viewModelScope`（Main 调度器）直接调用 → `NetworkOnMainThreadException`。
+
+**修法**：改成 `suspend fun` + `withContext(Dispatchers.IO)`。
+（`download()` 是 Flow，原本就有 `flowOn(Dispatchers.IO)`，不受影响。）
+
+**教训**：任何用同步 `execute()` 的网络调用，必须显式切 IO 线程，
+不能依赖调用方所在的作用域。
 
 **如果忘了换 keystore 就构建**：`validateSigningRelease` 可能显示 `UP-TO-DATE`
 （Gradle 缓存），产出的 APK 仍是旧签名。**必须用 apksigner 实际验证证书指纹**，

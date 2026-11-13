@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -73,6 +74,12 @@ class ModelDownloader(context: Context) {
         data class Failed(val modelId: String, val message: String) : Progress
     }
 
+    /**
+     * 下载模型文件（断点续传 + SHA-256 校验）。
+     *
+     * 末尾的 flowOn(Dispatchers.IO) 保证同步的 OkHttp execute() 不在主线程执行
+     * （真机实测：跑在主线程会抛 NetworkOnMainThreadException）。
+     */
     fun download(entry: ModelEntry): Flow<Progress> = flow {
         val dir = dirOf(entry.id).apply { mkdirs() }
         try {
@@ -150,16 +157,26 @@ class ModelDownloader(context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    /** 拉取云端 manifest，解析成功后落盘一份，供离线时读取 */
-    fun fetchManifest(url: String): Result<ModelManifest> = runCatching {
-        val req = Request.Builder().url(url).get().build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("HTTP ${resp.code}")
-            val body = resp.body?.string() ?: error("empty manifest")
-            val manifest = ModelManifestParser.parse(body).getOrThrow()
-            root.mkdirs()
-            File(root, "manifest.json").writeText(body)
-            manifest
+    /**
+     * 拉取云端 manifest，解析成功后落盘一份，供离线时读取。
+     *
+     * 必须是 suspend：OkHttp 的同步 execute() 跑在主线程会抛
+     * NetworkOnMainThreadException（真机实测）。调用方通常是 viewModelScope
+     * （Main 调度器），所以这里自己切到 IO。
+     */
+    suspend fun fetchManifest(url: String): Result<ModelManifest> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder().url(url).get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                val body = resp.body?.string() ?: error("empty manifest")
+                val manifest = ModelManifestParser.parse(body).getOrThrow()
+                root.mkdirs()
+                // 落盘时去掉 BOM：本地缓存要被 org.json 直接解析
+                File(root, "manifest.json")
+                    .writeText(body.trim().removePrefix("\uFEFF").trim())
+                manifest
+            }
         }
     }
 

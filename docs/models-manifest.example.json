@@ -44,6 +44,34 @@
       ]
     },
     {
+      "id": "whisper-tiny-multilang",
+      "name": "Whisper tiny 多语种（中/西/英，98.8MB）",
+      "kind": "asr-offline",
+      "_source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2",
+      "_note": "解压后取 tiny-encoder.int8.onnx / tiny-decoder.int8.onnx / tiny-tokens.txt；非流式，需 VAD 切段；自带 lang 语言检测，双向同传靠它路由方向",
+      "_why": "sherpa-onnx 官方流式 ASR 没有西班牙语，Whisper 是唯一能覆盖中+西的本地方案",
+      "files": [
+        {
+          "key": "encoder",
+          "url": "https://YOUR-CLOUD/models/whisper/encoder.int8.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        },
+        {
+          "key": "decoder",
+          "url": "https://YOUR-CLOUD/models/whisper/decoder.int8.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        },
+        {
+          "key": "tokens",
+          "url": "https://YOUR-CLOUD/models/whisper/tokens.txt",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        }
+      ]
+    },
+    {
       "id": "punct-ct-transformer-zh-en-int8",
       "name": "标点恢复（中英，72MB）",
       "kind": "punctuation",

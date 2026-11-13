@@ -37,7 +37,13 @@ data class ModelManifest(
 object ModelManifestParser {
 
     fun parse(text: String): Result<ModelManifest> = runCatching {
-        val root = JSONObject(text)
+        // 容忍 UTF-8 BOM：Windows 记事本 / PowerShell Set-Content 存出的 JSON 常带 BOM，
+        // org.json 遇到 BOM 会直接解析失败（且异常 message 可能为 null，极难排查）。
+        val clean = text.trim().removePrefix("\uFEFF").trim()
+        require(clean.startsWith("{")) {
+            "manifest 不是合法 JSON 对象（首字符 '${clean.take(1)}'）"
+        }
+        val root = JSONObject(clean)
         val version = root.optInt("version", 1)
         val arr = root.getJSONArray("models")
         val list = ArrayList<ModelEntry>(arr.length())

@@ -1,4 +1,4 @@
-package dev.beyonddev.asrprobe
+﻿package dev.beyonddev.asrprobe
 
 import android.app.Activity
 import android.os.Bundle
@@ -7,30 +7,31 @@ import android.util.TypedValue
 import android.widget.ScrollView
 import android.widget.TextView
 import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OnlineModelConfig
-import com.k2fsa.sherpa.onnx.OnlineRecognizer
-import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
 import java.io.File
 
 /**
- * ASR Probe —— sherpa-onnx 能力验证工具（不是产品）。
+ * ASR Probe —— Whisper tiny 识别质量验证（不是产品）。
  *
- * 本次要回答的问题：模型能否从 APK 外的绝对路径加载？
- * 决定「模型放云空间、首启下载」方案是否可行。
+ * 目的：回答「Whisper tiny 能不能用于中文/西班牙语双向同传」。
+ * 方法：
+ *   1. 自带英语样本（已知文本）验证模型加载与基本正确性
+ *   2. 用设备 TTS 合成西班牙语、中文 → 重采样到 16k → 识别
+ *   3. 输出文本、语言检测、RTF
  *
- * 方法：先测 assets（对照组，已知可行），再测绝对路径。
- * 日志同时写 filesDir/result.txt —— native 崩溃时 logcat 可能丢失，文件更可靠。
+ * 注意：TTS 合成音比真实人声干净，识别会偏乐观；这是可行性下限测试。
  */
 class MainActivity : Activity() {
 
     private companion object {
         const val TAG = "ASRProbe"
-        const val SAMPLE_RATE = 16000
-        const val CHUNK_SAMPLES = 1600
-        val MODEL_FILES = listOf(
-            "encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"
-        )
+        const val TARGET_RATE = 16000
+        const val ENCODER = "whisper/encoder.int8.onnx"
+        const val DECODER = "whisper/decoder.int8.onnx"
+        const val TOKENS = "whisper/tokens.txt"
     }
 
     private lateinit var tv: TextView
@@ -38,181 +39,103 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        resultFile = File(filesDir, "result.txt")
-        resultFile.writeText("")
+        resultFile = File(filesDir, "whisper-result.txt").apply { writeText("") }
 
         tv = TextView(this).apply {
-            setPadding(56, 56, 56, 56)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(48, 48, 48, 48)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextIsSelectable(true)
-            text = "Running..."
+            text = "Running Whisper test..."
         }
         setContentView(ScrollView(this).apply { addView(tv) })
 
         Thread {
             try {
-                runTest()
+                runAll()
             } catch (t: Throwable) {
-                logBoth("TOP_LEVEL_EXCEPTION: ${t.javaClass.simpleName}: ${t.message}")
-                runOnUiThread { tv.text = resultFile.readText() }
+                log("FATAL ${t.javaClass.simpleName}: ${t.message}\n${t.stackTraceToString().take(800)}")
             }
+            runOnUiThread { tv.text = resultFile.readText() }
         }.start()
     }
 
-    /** logcat + 文件双写，确保崩溃前的记录不丢。 */
-    private fun logBoth(msg: String) {
-        Log.i(TAG, msg)
-        try {
-            resultFile.appendText(msg + "\n")
-        } catch (_: Throwable) {
-        }
+    private fun log(s: String) {
+        Log.i(TAG, s)
+        runCatching { resultFile.appendText(s + "\n") }
     }
 
-    private fun runTest() {
-        logBoth("=== ASR Probe / external path test ===")
-        logBoth("device: ${android.os.Build.MODEL} / SDK ${android.os.Build.VERSION.SDK_INT} / ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
+    private fun runAll() {
+        log("=== Whisper tiny (int8) test ===")
+        log("device: ${android.os.Build.MODEL} / SDK ${android.os.Build.VERSION.SDK_INT} / ${android.os.Build.SUPPORTED_ABIS.firstOrNull()}")
+        log("")
 
-        // ---- 准备：把模型复制到 filesDir（模拟"云空间下载后落盘"）----
-        val modelDir = File(filesDir, "asr").apply { mkdirs() }
-        for (n in MODEL_FILES) {
-            val dst = File(modelDir, n)
-            if (!dst.exists() || dst.length() == 0L) {
-                assets.open("asr/$n").use { i -> dst.outputStream().use { o -> i.copyTo(o) } }
-            }
-        }
-        logBoth("modelDir=${modelDir.absolutePath} files=${modelDir.list()?.size}")
-        logBoth("")
-
-        // ---- 对照组 A：assets 相对路径 ----
-        logBoth("[A] ASSETS path")
-        val assetsOk = try {
-            val cfg = buildConfig(
-                enc = "asr/encoder.int8.onnx",
-                dec = "asr/decoder.int8.onnx",
-                joi = "asr/joiner.int8.onnx",
-                tok = "asr/tokens.txt",
+        // ---- 加载模型 ----
+        val t0 = System.nanoTime()
+        val recognizer = try {
+            val config = OfflineRecognizerConfig(
+                featConfig = FeatureConfig(sampleRate = TARGET_RATE, featureDim = 80),
+                modelConfig = OfflineModelConfig(
+                    // Whisper 的配置项是 (encoder, decoder, language, task,
+                    // tailPaddings, enableTokenTimestamps, enableSegmentTimestamps)
+                    // 注意：没有 numThreads/debug，那两个属于 OfflineModelConfig
+                    whisper = OfflineWhisperModelConfig(
+                        encoder = ENCODER,
+                        decoder = DECODER,
+                        language = "",          // 空 = 自动检测
+                        task = "transcribe",
+                    ),
+                    tokens = TOKENS,
+                    numThreads = 2,
+                    debug = false,
+                ),
             )
-            val t0 = System.nanoTime()
-            val r = OnlineRecognizer(assets, cfg)
-            logBoth("  A RESULT = SUCCESS (load ${(System.nanoTime() - t0) / 1_000_000} ms)")
-            r.release()
-            true
+            OfflineRecognizer(assets, config)
         } catch (t: Throwable) {
-            logBoth("  A RESULT = FAILED: ${t.javaClass.simpleName}: ${t.message}")
-            false
+            log("LOAD_FAILED ${t.javaClass.simpleName}: ${t.message}")
+            return
         }
-        logBoth("")
+        log("model loaded in ${(System.nanoTime() - t0) / 1_000_000} ms")
+        log("")
 
-        // ---- 实验组 B（已确认会 native 崩溃，跳过以免杀死进程）----
-        logBoth("[B] ABSOLUTE path via public ctor — SKIPPED (known native crash)")
+        // ---- 1. 英语自带样本（对照，已知文本） ----
+        recognizeAsset(recognizer, "whisper/en-test.wav", "EN builtin")
+        log("")
 
-        // ---- 实验组 C：反射调用 private newFromFile ----
-        logBoth("")
-        logBoth("[C] ABSOLUTE path via reflected newFromFile")
-        try {
-            val cfg = buildConfig(
-                enc = File(modelDir, "encoder.int8.onnx").absolutePath,
-                dec = File(modelDir, "decoder.int8.onnx").absolutePath,
-                joi = File(modelDir, "joiner.int8.onnx").absolutePath,
-                tok = File(modelDir, "tokens.txt").absolutePath,
-            )
-            val t0 = System.nanoTime()
-            val r = createFromFile(cfg)
-            logBoth("  C RESULT = SUCCESS (load ${(System.nanoTime() - t0) / 1_000_000} ms)")
+        // ---- 2. 西语 / 中文样本（在线 TTS 合成后转 16k，非真人） ----
+        recognizeAsset(recognizer, "whisper/es-tts.wav", "ES tts")
+        log("  expect ≈ Buenos dias, como estas? Me alegra mucho verte hoy.")
+        log("")
+        recognizeAsset(recognizer, "whisper/zh-tts.wav", "ZH tts")
+        log("  expect ≈ 今天天气不错，我们下午一起去看电影吧。")
+        log("")
 
-            val samples = readWav("asr/test.wav")
-            val audioSec = samples.size.toDouble() / SAMPLE_RATE
-            val stream = r.createStream()
-            var i = 0
-            val td = System.nanoTime()
-            while (i < samples.size) {
-                val end = minOf(i + CHUNK_SAMPLES, samples.size)
-                stream.acceptWaveform(samples.copyOfRange(i, end), SAMPLE_RATE)
-                while (r.isReady(stream)) r.decode(stream)
-                i = end
-            }
-            stream.inputFinished()
-            while (r.isReady(stream)) r.decode(stream)
-            val ms = (System.nanoTime() - td) / 1_000_000.0
-            logBoth("  C text = ${r.getResult(stream).text}")
-            logBoth("  C RTF  = ${String.format("%.3f", ms / 1000.0 / audioSec)}")
-            stream.release()
-            r.release()
-        } catch (t: Throwable) {
-            logBoth("  C RESULT = FAILED: ${t.javaClass.simpleName}: ${t.message}")
-            logBoth("  ${t.stackTraceToString().take(600)}")
-        }
-
-        logBoth("")
-        logBoth("=== DONE ===")
-        runOnUiThread { tv.text = resultFile.readText() }
+        recognizer.release()
+        log("")
+        log("=== DONE ===")
     }
 
-    /**
-     * 绕过 Kotlin 包装：native 层有 newFromFile（支持绝对路径），但被声明为 private。
-     * 用 Unsafe.allocateInstance 跳过构造器，反射调 newFromFile，再把 ptr/config 填回去。
-     */
-    private fun createFromFile(config: OnlineRecognizerConfig): OnlineRecognizer {
-        val cls = OnlineRecognizer::class.java
-
-        val unsafeCls = Class.forName("sun.misc.Unsafe")
-        val f = unsafeCls.getDeclaredField("theUnsafe").apply { isAccessible = true }
-        val unsafe = f.get(null)
-        val alloc = unsafeCls.getMethod("allocateInstance", Class::class.java)
-        val inst = alloc.invoke(unsafe, cls) as OnlineRecognizer
-        logBoth("  allocated instance without ctor")
-
-        val newFromFile = cls.getDeclaredMethod("newFromFile", OnlineRecognizerConfig::class.java)
-        newFromFile.isAccessible = true
-        val ptr = newFromFile.invoke(inst, config) as Long
-        logBoth("  newFromFile ptr=$ptr")
-        require(ptr != 0L) { "newFromFile returned null ptr" }
-
-        cls.getDeclaredField("ptr").apply { isAccessible = true }.setLong(inst, ptr)
-        cls.getDeclaredField("config").apply { isAccessible = true }.set(inst, config)
-        logBoth("  ptr/config injected")
-        return inst
+    private fun recognizeAsset(rec: OfflineRecognizer, path: String, label: String) {
+        val samples = try {
+            WavReader.readAsset(assets, path, TARGET_RATE)
+        } catch (t: Throwable) {
+            log("$label: read failed ${t.message}")
+            return
+        }
+        recognizeSamples(rec, samples, label)
     }
 
-    private fun buildConfig(enc: String, dec: String, joi: String, tok: String) =
-        OnlineRecognizerConfig(
-            featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
-            modelConfig = OnlineModelConfig(
-                transducer = OnlineTransducerModelConfig(encoder = enc, decoder = dec, joiner = joi),
-                tokens = tok,
-                numThreads = 2,
-                debug = false,
-            ),
-            enableEndpoint = true,
-        )
+    private fun recognizeSamples(rec: OfflineRecognizer, samples: FloatArray, label: String) {
+        val audioSec = samples.size / TARGET_RATE.toDouble()
+        val t0 = System.nanoTime()
+        val stream = rec.createStream()
+        stream.acceptWaveform(samples, TARGET_RATE)
+        rec.decode(stream)
+        val res = rec.getResult(stream)
+        val ms = (System.nanoTime() - t0) / 1_000_000.0
+        stream.release()
 
-    private fun readWav(name: String): FloatArray {
-        val bytes = assets.open(name).use { it.readBytes() }
-        var pos = 12
-        var dataStart = -1
-        var dataLen = 0
-        while (pos + 8 <= bytes.size) {
-            val id = String(bytes, pos, 4, Charsets.US_ASCII)
-            val size = (bytes[pos + 4].toInt() and 0xFF) or
-                ((bytes[pos + 5].toInt() and 0xFF) shl 8) or
-                ((bytes[pos + 6].toInt() and 0xFF) shl 16) or
-                ((bytes[pos + 7].toInt() and 0xFF) shl 24)
-            if (id == "data") {
-                dataStart = pos + 8
-                dataLen = minOf(size, bytes.size - dataStart)
-                break
-            }
-            pos += 8 + size + (size and 1)
-        }
-        require(dataStart > 0) { "no data chunk" }
-        val n = dataLen / 2
-        val out = FloatArray(n)
-        for (k in 0 until n) {
-            val lo = bytes[dataStart + k * 2].toInt() and 0xFF
-            val hi = bytes[dataStart + k * 2 + 1].toInt()
-            out[k] = ((hi shl 8) or lo) / 32768.0f
-        }
-        return out
+        log("$label out : ${res.text}")
+        log("$label lang: ${res.lang}")
+        log("$label RTF : ${"%.3f".format(ms / 1000.0 / audioSec)}  (decode ${"%.0f".format(ms)} ms / audio ${"%.2f".format(audioSec)} s)")
     }
 }

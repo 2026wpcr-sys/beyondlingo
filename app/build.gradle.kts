@@ -39,10 +39,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // sherpa-onnx AAR 携带 4 个 ABI（合计 ~137MB），只保留需要的
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
+        // ABI 按变体分别声明（见下方 buildTypes）：
+        // - defaultConfig 里写 abiFilters 会作用于所有变体，
+        //   buildType 再写就是「追加」而非「替换」，x86_64 去不掉（实测过）。
+        // - sherpa-onnx AAR 携带 4 个 ABI（合计 ~137MB），必须裁剪。
     }
 
     signingConfigs {
@@ -68,10 +68,23 @@ android {
             if (hasSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }
+
+            // release 只保留 arm64-v8a。
+            // x86_64 那套 so 约 65MB（onnxruntime 24.4 + avcodec 13.2 + mlkit 11.1 …），
+            // 只为模拟器调试而存在；真机发布不需要，省下约 65MB。
+            // 需要在 x86_64 模拟器上测 release 时，把它加回来即可。
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+
+            // debug 保留 x86_64 以便在模拟器上跑
+            ndk {
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
         }
     }
 

@@ -13,7 +13,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ModelUiState(
-    val manifestUrl: String = "",
+    /**
+     * manifest 地址。debug 构建预填本机测试地址：
+     * 配合 `adb reverse tcp:8000 tcp:8000` + 开发机上的 `python -m http.server 8000`，
+     * 可以完整验证「拉清单 → 下载 → SHA-256 校验 → 加载」链路。
+     * release 构建留空，由用户填自己的云空间 HTTPS 地址。
+     */
+    val manifestUrl: String = if (dev.beyonddev.beyondlingo.BuildConfig.DEBUG) {
+        "http://127.0.0.1:8000/manifest.json"
+    } else {
+        ""
+    },
     val loading: Boolean = false,
     val entries: List<ModelEntry> = emptyList(),
     /** modelId -> 是否已就绪 */
@@ -63,12 +73,18 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
                 },
                 onFailure = { t ->
                     _state.update {
-                        it.copy(loading = false, message = "拉取失败：${t.message}")
+                        it.copy(loading = false, message = "拉取失败：${describe(t)}")
                     }
                 },
             )
         }
     }
+
+    /** 异常 message 常为 null（如 JSONException），要给出可读兜底 */
+    private fun describe(t: Throwable): String =
+        t.message?.takeIf { it.isNotBlank() }
+            ?: (t.cause?.message?.takeIf { it.isNotBlank() })
+            ?: t.javaClass.simpleName
 
     fun download(entry: ModelEntry) {
         _state.update {

@@ -58,3 +58,6 @@ app/src/main/assets/asr/
 /ui.xml
 /uiautomator*.xml
 
+
+# asrprobe 的 Whisper 验证模型
+asrprobe/src/main/assets/

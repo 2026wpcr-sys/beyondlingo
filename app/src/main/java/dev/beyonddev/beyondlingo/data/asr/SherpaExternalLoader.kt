@@ -2,6 +2,8 @@ package dev.beyonddev.beyondlingo.data.asr
 
 import android.content.Context
 import android.util.Log
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflinePunctuation
@@ -33,6 +35,19 @@ object SherpaExternalLoader {
     ): OnlineRecognizer? = constructOrNull(
         klass = OnlineRecognizer::class.java,
         configClass = OnlineRecognizerConfig::class.java,
+        config = config,
+    )
+
+    /**
+     * 非流式识别器（Whisper / SenseVoice / Dolby 等）。
+     * JNI 同样导出 `OfflineRecognizer_newFromFile`，反射路径成立（已在 AAR 符号表核实）。
+     */
+    fun offlineRecognizerOrNull(
+        context: Context,
+        config: OfflineRecognizerConfig,
+    ): OfflineRecognizer? = constructOrNull(
+        klass = OfflineRecognizer::class.java,
+        configClass = OfflineRecognizerConfig::class.java,
         config = config,
     )
 

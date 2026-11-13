@@ -1,4 +1,4 @@
-package dev.beyonddev.beyondlingo.ui.screen
+﻿package dev.beyonddev.beyondlingo.ui.screen
 
 import android.Manifest
 import android.content.Intent
@@ -50,6 +50,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import dev.beyonddev.beyondlingo.data.asr.BidirectionalResolver
+import dev.beyonddev.beyondlingo.data.engine.LangEnum
 import dev.beyonddev.beyondlingo.vm.SimultViewModel
 import dev.beyonddev.beyondlingo.vm.SubtitleLine
 
@@ -70,10 +77,14 @@ fun SimultScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
+    // 双向语言对（默认 中文 ⇄ 西班牙语）
+    var leftLang by remember { mutableStateOf(LangEnum.ChineseSimplified) }
+    var rightLang by remember { mutableStateOf(LangEnum.Spanish) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.start()
+        if (granted) viewModel.startBidirectional(leftLang, rightLang)
     }
 
     // 新字幕到达时自动滚到底部
@@ -184,6 +195,17 @@ fun SimultScreen(
                 }
             }
 
+            // ---- 双向语言对 ----
+            if (!state.running) {
+                DirectionBar(
+                    left = leftLang,
+                    right = rightLang,
+                    enabled = !state.loading,
+                    onLeftChange = { leftLang = it },
+                    onRightChange = { rightLang = it },
+                )
+            }
+
             // ---- 控制区 ----
             Row(
                 modifier = Modifier
@@ -210,16 +232,19 @@ fun SimultScreen(
                             val granted = ContextCompat.checkSelfPermission(
                                 context, Manifest.permission.RECORD_AUDIO
                             ) == PackageManager.PERMISSION_GRANTED
-                            if (granted) viewModel.start() else permissionLauncher.launch(
-                                Manifest.permission.RECORD_AUDIO
-                            )
+                            if (granted) {
+                                // 双向：Whisper + VAD，自动判定谁在说
+                                viewModel.startBidirectional(leftLang, rightLang)
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
                         },
                         enabled = !state.loading,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
                     ) {
-                        Text("开始同传", fontSize = 16.sp)
+                        Text("开始同传（双向）", fontSize = 16.sp)
                     }
                 }
             }
@@ -249,6 +274,20 @@ fun SimultScreen(
 @Composable
 private fun SubtitleBlock(line: SubtitleLine) {
     Column(modifier = Modifier.fillMaxWidth()) {
+        // 说话方标签（仅双向模式显示）
+        if (line.side != BidirectionalResolver.Side.UNKNOWN) {
+            val isMe = line.side == BidirectionalResolver.Side.LEFT
+            Text(
+                text = if (isMe) "我方" else "对方",
+                fontSize = 10.sp,
+                color = if (isMe) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.tertiary
+                },
+                modifier = Modifier.padding(bottom = 2.dp),
+            )
+        }
         // 原文：小、淡
         Text(
             text = line.original,
@@ -287,9 +326,76 @@ private fun SubtitleBlock(line: SubtitleLine) {
     }
 }
 
+/**
+ * 双向语言对选择：我方 ⇄ 对方。
+ *
+ * 交互刻意做成「点一下换语言」而不是复杂选择器：
+ * 同传场景下用户手是空的，需要一眼看懂、一点就改。
+ */
 @Composable
-private fun CenterHint(text: String, showSpinner: Boolean = false) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun DirectionBar(
+    left: LangEnum,
+    right: LangEnum,
+    enabled: Boolean,
+    onLeftChange: (LangEnum) -> Unit,
+    onRightChange: (LangEnum) -> Unit,
+) {
+    var leftOpen by remember { mutableStateOf(false) }
+    var rightOpen by remember { mutableStateOf(false) }
+    val choices = remember {
+        listOf(
+            LangEnum.ChineseSimplified,
+            LangEnum.Spanish,
+            LangEnum.English,
+            LangEnum.Japanese,
+            LangEnum.Korean,
+            LangEnum.French,
+            LangEnum.German,
+            LangEnum.Russian,
+        )
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            TextButton(onClick = { leftOpen = true }, enabled = enabled) {
+                Text("我方 ${left.labelZh}", fontSize = 13.sp)
+            }
+            DropdownMenu(expanded = leftOpen, onDismissRequest = { leftOpen = false }) {
+                choices.filter { it != right }.forEach { lang ->
+                    DropdownMenuItem(
+                        text = { Text(lang.labelZh) },
+                        onClick = { leftOpen = false; onLeftChange(lang) },
+                    )
+                }
+            }
+        }
+
+        Text("⇄", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Box {
+            TextButton(onClick = { rightOpen = true }, enabled = enabled) {
+                Text("对方 ${right.labelZh}", fontSize = 13.sp)
+            }
+            DropdownMenu(expanded = rightOpen, onDismissRequest = { rightOpen = false }) {
+                choices.filter { it != left }.forEach { lang ->
+                    DropdownMenuItem(
+                        text = { Text(lang.labelZh) },
+                        onClick = { rightOpen = false; onRightChange(lang) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CenterHint(text: String, showSpinner: Boolean = false) {    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (showSpinner) {
                 CircularProgressIndicator(strokeWidth = 2.dp)

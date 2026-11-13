@@ -3,6 +3,7 @@ package dev.beyonddev.beyondlingo.vm
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.beyonddev.beyondlingo.data.model.BuiltInModels
 import dev.beyonddev.beyondlingo.data.model.ModelDownloader
 import dev.beyonddev.beyondlingo.data.model.ModelEntry
 import dev.beyonddev.beyondlingo.data.model.ModelManifest
@@ -17,7 +18,8 @@ data class ModelUiState(
      * manifest 地址。debug 构建预填本机测试地址：
      * 配合 `adb reverse tcp:8000 tcp:8000` + 开发机上的 `python -m http.server 8000`，
      * 可以完整验证「拉清单 → 下载 → SHA-256 校验 → 加载」链路。
-     * release 构建留空，由用户填自己的云空间 HTTPS 地址。
+     * release 构建留空 —— 此时使用 App 内置的清单（BuiltInModels），
+     * 用户填了自己的云空间地址则优先用用户的。
      */
     val manifestUrl: String = if (dev.beyonddev.beyondlingo.BuildConfig.DEBUG) {
         "http://127.0.0.1:8000/manifest.json"
@@ -31,6 +33,8 @@ data class ModelUiState(
     /** modelId -> 下载进度文本 */
     val progress: Map<String, String> = emptyMap(),
     val message: String? = null,
+    /** 当前清单来源：内置 或 用户填的地址 */
+    val usingBuiltIn: Boolean = true,
 )
 
 /**
@@ -48,26 +52,38 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(manifestUrl = url) }
     }
 
+    /**
+     * 加载清单。
+     *
+     * 地址为空 → 用 App 内置清单（BuiltInModels），不发网络请求；
+     * 地址非空 → 走用户填的云空间地址。
+     */
     fun loadManifest() {
         val url = _state.value.manifestUrl.trim()
-        if (url.isEmpty()) {
-            _state.update { it.copy(message = "请先填写 manifest 地址") }
-            return
-        }
         _state.update { it.copy(loading = true, message = null) }
         viewModelScope.launch {
-            val result = downloader.fetchManifest(url)
+            val result = if (url.isEmpty()) {
+                runCatching { BuiltInModels.manifest() }
+            } else {
+                downloader.fetchManifest(url)
+            }
             result.fold(
                 onSuccess = { manifest ->
                     val ready = manifest.models.associate {
                         it.id to downloader.isReady(it)
                     }
+                    val builtIn = url.isEmpty()
                     _state.update {
                         it.copy(
                             loading = false,
                             entries = manifest.models,
                             ready = ready,
-                            message = "找到 ${manifest.models.size} 个模型（v${manifest.version}）",
+                            usingBuiltIn = builtIn,
+                            message = if (builtIn) {
+                                "内置清单：${manifest.models.size} 个模型（v${manifest.version}）"
+                            } else {
+                                "找到 ${manifest.models.size} 个模型（v${manifest.version}）"
+                            },
                         )
                     }
                 },

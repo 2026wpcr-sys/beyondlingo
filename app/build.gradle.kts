@@ -183,4 +183,7 @@ dependencies {
 
     // 单元测试：简繁转换表等纯逻辑
     testImplementation("junit:junit:4.13.2")
+    // Android SDK 自带的 org.json 只是 stub（方法全部抛"not mocked"），
+    // 单元测试里要用真实实现才能验证 manifest 解析
+    testImplementation("org.json:json:20231013")
 }

@@ -62,8 +62,8 @@ fun ModelManagerScreen(
                 .padding(horizontal = 20.dp),
         ) {
             Text(
-                text = "把模型放在你的云空间（HTTPS 直链 + 支持 Range），" +
-                    "在此填入 manifest 地址。下载完成后同传会自动改用该模型。",
+                text = "模型默认从内置清单下载，无需额外配置。" +
+                    "若你有自己的云空间，可填入 manifest 地址覆盖（需 HTTPS 直链且支持 Range）。",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

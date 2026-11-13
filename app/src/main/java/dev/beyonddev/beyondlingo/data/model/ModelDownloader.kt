@@ -180,11 +180,34 @@ class ModelDownloader(context: Context) {
         }
     }
 
-    /** 读取上次落盘的 manifest（离线可用） */
-    fun cachedManifest(): ModelManifest? = runCatching {
-        val f = File(root, "manifest.json")
-        if (!f.exists()) return null
-        ModelManifestParser.parse(f.readText()).getOrNull()
+    /**
+     * 读取可用清单：优先本地缓存（用户自己的云空间），否则回退内置清单。
+     *
+     * 回退内置是必须的 —— 内置清单不会经过 fetchManifest()，不会落盘，
+     * 若只读缓存，App 重启后同传就找不到模型了（真机实测过这个坑）。
+     *
+     * 回退时会把内置清单落盘，保证后续流程（modelId 目录、isReady 判定）
+     * 与「用户填地址拉取」完全同构。
+     */
+    fun cachedManifest(): ModelManifest? {
+        val cached = runCatching {
+            val f = File(root, "manifest.json")
+            if (!f.exists()) return null
+            ModelManifestParser.parse(f.readText()).getOrNull()
+        }.getOrNull()
+        if (cached != null) return cached
+        return persistBuiltInManifest()
+    }
+
+    /**
+     * 把内置清单落盘，让后续流程与「用户填地址拉取」完全同构
+     * （modelId 目录、.done 标记、isReady 判定都依赖同一套路径规则）。
+     */
+    fun persistBuiltInManifest(): ModelManifest? = runCatching {
+        val m = BuiltInModels.manifest()
+        root.mkdirs()
+        File(root, "manifest.json").writeText(BuiltInModels.MANIFEST_JSON.trim())
+        m
     }.getOrNull()
 
     private fun sha256(f: File): String {

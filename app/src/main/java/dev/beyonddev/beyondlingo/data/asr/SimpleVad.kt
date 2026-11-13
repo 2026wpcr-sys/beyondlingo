@@ -16,13 +16,20 @@ import kotlin.math.sqrt
  * - 太短的段（< [minSpeechMs]）丢弃，避免咳嗽/敲击触发
  * - 超过 [maxSegmentMs] 强制切段，避免长句无限增长
  *
+ * 参数取值的关键（真机实测「识别质量差」后调整）：
+ * 切得太碎是识别崩掉的主因之一 —— Whisper 拿到的片段太短时既没有上下文，
+ * 语言检测也会飘。所以：
+ * - speechRms 从 0.012 降到 0.008：更灵敏，避免把轻声的字切掉
+ * - silenceMs 从 650 提到 900：等更久的静音，一段才包含完整句子
+ * - minSpeechMs 从 320 提到 500：丢掉过短的碎片
+ *
  * 线程约束：由同一个采集线程调用，非线程安全。
  */
 class SimpleVad(
-    private val speechRms: Float = 0.012f,
-    private val silenceMs: Int = 650,
-    private val minSpeechMs: Int = 320,
-    private val maxSegmentMs: Int = 15_000,
+    private val speechRms: Float = 0.008f,
+    private val silenceMs: Int = 900,
+    private val minSpeechMs: Int = 500,
+    private val maxSegmentMs: Int = 20_000,
     private val sampleRate: Int = 16_000,
 ) {
 

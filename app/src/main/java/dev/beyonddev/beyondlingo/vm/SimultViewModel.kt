@@ -83,6 +83,20 @@ data class SimultUiState(
 class SimultViewModel(app: Application) : AndroidViewModel(app) {
 
     private val settingsStore = SettingsStore(app)
+
+    /**
+     * 用户在「模型」页选定的 ASR 模型 id。
+     *
+     * refreshExternalModel() 是非 suspend 的（在多个 start* 里同步调用），
+     * 所以用这个持续同步的字段，避免在那里再挂起读 DataStore。
+     */
+    @Volatile private var selectedAsrModelId: String = ""
+
+    init {
+        viewModelScope.launch {
+            settingsStore.settings.collect { s -> selectedAsrModelId = s.asrModelId }
+        }
+    }
     private val repo = TranslateRepository(app)
     private val engine = AsrEngine(app)
     private val punctuation = PunctuationEngine(app)
@@ -182,6 +196,70 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
      * 依赖云端下发的 Whisper 多语种模型（manifest kind="asr-offline"）。
      * 模型未就绪时明确报错，不做静默降级——因为用中文模型硬跑西语只会出乱码。
      */
+    /**
+     * 对话翻译：按哪个语言按钮，就按哪个语言识别，译往另一侧。
+     *
+     * 语种完全显式指定，不做自动检测、不轮流推断 —— 这是识别质量最稳的形态，
+     * 也符合「双方轮流说、说完一段再翻译」的实际用法。
+     */
+    fun startConversation(left: LangEnum, right: LangEnum, speakSide: BidirectionalResolver.Side) {
+        if (_state.value.running || _state.value.loading) return
+        if (left == right) {
+            _state.update { it.copy(error = "两侧语言不能相同") }
+            return
+        }
+        if (speakSide == BidirectionalResolver.Side.UNKNOWN) return
+
+        refreshExternalModel()
+        resolver.leftLanguage = left
+        resolver.rightLanguage = right
+        resolver.reset()
+
+        _state.update {
+            it.copy(
+                loading = true,
+                error = null,
+                leftLang = left,
+                rightLang = right,
+                bidirectional = true,
+            )
+        }
+
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { whisper.initialize() }
+            if (!ok) {
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = "多语种语音模型未就绪。请在「模型」页下载 Whisper 模型，" +
+                            "再回到这里启动。",
+                    )
+                }
+                return@launch
+            }
+
+            val s = settingsStore.settings.first()
+            engineId = EngineRegistry.DEFAULT_ENGINE_ID
+            engineConfig = s.configFor(engineId)
+
+            val session = BidirectionalSession(
+                context = getApplication(),
+                whisper = whisper,
+                repo = repo,
+                resolver = resolver,
+                engineId = engineId,
+                engineConfig = engineConfig,
+                scope = viewModelScope,
+                onEvent = { ev -> handleBidiEvent(ev) },
+                forcedSpeakSide = speakSide,
+            )
+            bidiSession = session
+            session.start()
+            startForegroundService()
+            _state.update { it.copy(loading = false, running = true) }
+        }
+    }
+
     fun startBidirectional(left: LangEnum, right: LangEnum) {
         if (_state.value.running || _state.value.loading) return
         if (left == right) {
@@ -346,10 +424,14 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
             } else null
         } else null
 
-        // 多语种（Whisper）—— 双向同传用，只有 encoder/decoder/tokens 三件套
-        val offlineEntry = manifest?.models?.firstOrNull {
+        // 多语种（Whisper）—— 对话翻译用，只有 encoder/decoder/tokens 三件套。
+        // 优先用用户在「模型」页选定的那一档；未选或未就绪则退回第一个就绪的。
+        val selectedId = selectedAsrModelId
+        val offlineReady = manifest?.models?.filter {
             it.kind == "asr-offline" && downloader.isReady(it)
-        }
+        }.orEmpty()
+        val offlineEntry = offlineReady.firstOrNull { it.id == selectedId }
+            ?: offlineReady.firstOrNull()
         whisper.externalPaths = if (offlineEntry != null) {
             val enc = downloader.pathOf(offlineEntry, "encoder")
             val dec = downloader.pathOf(offlineEntry, "decoder")

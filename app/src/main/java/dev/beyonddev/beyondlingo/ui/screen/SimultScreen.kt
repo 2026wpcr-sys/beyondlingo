@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.beyondlingo.ui.screen
+package dev.beyonddev.beyondlingo.ui.screen
 
 import android.Manifest
 import android.content.Intent
@@ -81,10 +81,15 @@ fun SimultScreen(
     var leftLang by remember { mutableStateOf(LangEnum.ChineseSimplified) }
     var rightLang by remember { mutableStateOf(LangEnum.Spanish) }
 
+    // 权限请求前记下用户点的是哪个语言按钮
+    var pendingSide by remember {
+        mutableStateOf(BidirectionalResolver.Side.LEFT)
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.startBidirectional(leftLang, rightLang)
+        if (granted) viewModel.startConversation(leftLang, rightLang, pendingSide)
     }
 
     // 新字幕到达时自动滚到底部
@@ -96,7 +101,7 @@ fun SimultScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("同声传译") },
+                title = { Text("对话翻译") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -166,7 +171,8 @@ fun SimultScreen(
                     state.loading -> CenterHint("正在加载语音模型…", showSpinner = true)
 
                     state.lines.isEmpty() && state.partial.isEmpty() -> CenterHint(
-                        if (state.running) "请开始说话…" else "点击下方按钮开始同传"
+                        if (state.running) "请开始说话，说完停顿一下自动翻译…"
+                        else "选择谁来发言，点击对应语言按钮"
                     )
 
                     else -> LazyColumn(
@@ -206,45 +212,75 @@ fun SimultScreen(
                 )
             }
 
-            // ---- 控制区 ----
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (state.running) {
-                    Button(
-                        onClick = viewModel::stop,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                    ) {
-                        Text("停止同传", fontSize = 16.sp)
-                    }
-                } else {
+            // ---- 控制区：两个语言按钮，点哪个就是谁在说 ----
+            if (state.running) {
+                Button(
+                    onClick = viewModel::stop,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp)
+                        .height(52.dp),
+                ) {
+                    Text("结束这段", fontSize = 16.sp)
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     Button(
                         onClick = {
                             val granted = ContextCompat.checkSelfPermission(
                                 context, Manifest.permission.RECORD_AUDIO
                             ) == PackageManager.PERMISSION_GRANTED
                             if (granted) {
-                                // 双向：Whisper + VAD，自动判定谁在说
-                                viewModel.startBidirectional(leftLang, rightLang)
+                                viewModel.startConversation(
+                                    leftLang, rightLang, BidirectionalResolver.Side.LEFT
+                                )
                             } else {
+                                pendingSide = BidirectionalResolver.Side.LEFT
                                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             }
                         },
                         enabled = !state.loading,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
+                            .weight(1f)
+                            .height(64.dp),
                     ) {
-                        Text("开始同传（双向）", fontSize = 16.sp)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(leftLang.labelZh, fontSize = 16.sp)
+                            Text("译成${rightLang.labelZh}", fontSize = 11.sp)
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            val granted = ContextCompat.checkSelfPermission(
+                                context, Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) {
+                                viewModel.startConversation(
+                                    leftLang, rightLang, BidirectionalResolver.Side.RIGHT
+                                )
+                            } else {
+                                pendingSide = BidirectionalResolver.Side.RIGHT
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        enabled = !state.loading,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(64.dp),
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(rightLang.labelZh, fontSize = 16.sp)
+                            Text("译成${leftLang.labelZh}", fontSize = 11.sp)
+                        }
                     }
                 }
             }
@@ -260,7 +296,7 @@ fun SimultScreen(
             }
 
             Text(
-                text = "音频在设备本地识别，仅识别后的文字发送到翻译服务",
+                text = "双方轮流说，说完停顿即翻译；音频在设备本地识别",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -274,19 +310,22 @@ fun SimultScreen(
 @Composable
 private fun SubtitleBlock(line: SubtitleLine) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        // 说话方标签（仅双向模式显示）
+        // 说话方标签（仅双向模式显示）：直接显示语种，不写「我方/对方」
         if (line.side != BidirectionalResolver.Side.UNKNOWN) {
             val isMe = line.side == BidirectionalResolver.Side.LEFT
-            Text(
-                text = if (isMe) "我方" else "对方",
-                fontSize = 10.sp,
-                color = if (isMe) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.tertiary
-                },
-                modifier = Modifier.padding(bottom = 2.dp),
-            )
+            val langLabel = line.directionLabel.substringBefore("→").trim()
+            if (langLabel.isNotEmpty()) {
+                Text(
+                    text = langLabel,
+                    fontSize = 10.sp,
+                    color = if (isMe) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+            }
         }
         // 原文：小、淡
         Text(
@@ -364,7 +403,7 @@ private fun DirectionBar(
     ) {
         Box {
             TextButton(onClick = { leftOpen = true }, enabled = enabled) {
-                Text("我方 ${left.labelZh}", fontSize = 13.sp)
+                Text(left.labelZh, fontSize = 13.sp)
             }
             DropdownMenu(expanded = leftOpen, onDismissRequest = { leftOpen = false }) {
                 choices.filter { it != right }.forEach { lang ->
@@ -380,7 +419,7 @@ private fun DirectionBar(
 
         Box {
             TextButton(onClick = { rightOpen = true }, enabled = enabled) {
-                Text("对方 ${right.labelZh}", fontSize = 13.sp)
+                Text(right.labelZh, fontSize = 13.sp)
             }
             DropdownMenu(expanded = rightOpen, onDismissRequest = { rightOpen = false }) {
                 choices.filter { it != left }.forEach { lang ->

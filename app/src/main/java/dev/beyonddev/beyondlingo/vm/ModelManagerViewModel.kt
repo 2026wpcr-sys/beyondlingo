@@ -10,22 +10,19 @@ import dev.beyonddev.beyondlingo.data.model.ModelManifest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ModelUiState(
     /**
-     * manifest 地址。debug 构建预填本机测试地址：
-     * 配合 `adb reverse tcp:8000 tcp:8000` + 开发机上的 `python -m http.server 8000`，
-     * 可以完整验证「拉清单 → 下载 → SHA-256 校验 → 加载」链路。
-     * release 构建留空 —— 此时使用 App 内置的清单（BuiltInModels），
-     * 用户填了自己的云空间地址则优先用用户的。
+     * manifest 地址。留空 = 用 App 内置清单（多档 Whisper 可选）。
+     *
+     * 需要本地联调时手填地址即可，例如：
+     * `http://127.0.0.1:8000/manifest.json`（配合 `adb reverse tcp:8000 tcp:8000`）。
+     * 不再在 debug 里预填，避免掩盖内置清单的真实行为。
      */
-    val manifestUrl: String = if (dev.beyonddev.beyondlingo.BuildConfig.DEBUG) {
-        "http://127.0.0.1:8000/manifest.json"
-    } else {
-        ""
-    },
+    val manifestUrl: String = "",
     val loading: Boolean = false,
     val entries: List<ModelEntry> = emptyList(),
     /** modelId -> 是否已就绪 */
@@ -35,6 +32,8 @@ data class ModelUiState(
     val message: String? = null,
     /** 当前清单来源：内置 或 用户填的地址 */
     val usingBuiltIn: Boolean = true,
+    /** 用户选定的 ASR 模型 id（空 = 未显式选择） */
+    val selectedAsrId: String = "",
 )
 
 /**
@@ -45,8 +44,35 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val downloader = ModelDownloader(app)
 
+    private val settingsStore = dev.beyonddev.beyondlingo.data.SettingsStore(app)
+
+    /**
+     * 把某个已就绪的 ASR 模型设为当前使用。
+     *
+     * 只改设置，不重新加载 —— 下次进入对话翻译时按新选择初始化。
+     */
+    fun selectAsrModel(entry: ModelEntry) {
+        if (entry.kind != "asr-offline") return
+        if (_state.value.ready[entry.id] != true) return
+        viewModelScope.launch {
+            runCatching { settingsStore.setAsrModelId(entry.id) }
+            _state.update { it.copy(selectedAsrId = entry.id) }
+        }
+    }
+
     private val _state = MutableStateFlow(ModelUiState())
     val state: StateFlow<ModelUiState> = _state.asStateFlow()
+
+    init {
+        // 读一次用户选定的模型，用于在列表里标「使用中」。
+        // 必须放在 _state 之后：Kotlin 按声明顺序初始化，init 里提前访问会拿到 null。
+        viewModelScope.launch {
+            val id = runCatching {
+                settingsStore.settings.first().asrModelId
+            }.getOrNull().orEmpty()
+            _state.update { it.copy(selectedAsrId = id) }
+        }
+    }
 
     fun setManifestUrl(url: String) {
         _state.update { it.copy(manifestUrl = url) }

@@ -69,6 +69,8 @@ data class AppSettings(
 
     /** 主题：system / light / dark */
     val themeMode: String = "system",
+    /** 当前使用的离线 ASR 模型 id；空 = 用内置默认（whisper-base-int8） */
+    val asrModelId: String = "",
 ) {
     fun configFor(engineId: String): EngineConfig =
         engineConfigs[engineId] ?: EngineConfig.EMPTY
@@ -99,6 +101,7 @@ class SettingsStore(private val context: Context) {
             floatingAutoDismissMs = prefs[KEY_FLOAT_DISMISS_MS] ?: 5000L,
             bubbleEnabled = prefs[KEY_BUBBLE] ?: false,
             themeMode = prefs[KEY_THEME] ?: "system",
+            asrModelId = prefs[KEY_ASR_MODEL].orEmpty(),
         )
     }
 
@@ -132,6 +135,8 @@ class SettingsStore(private val context: Context) {
     suspend fun setFloatingAutoDismissMs(ms: Long) = edit { it[KEY_FLOAT_DISMISS_MS] = ms }
     suspend fun setBubbleEnabled(enabled: Boolean) = edit { it[KEY_BUBBLE] = enabled }
     suspend fun setThemeMode(mode: String) = edit { it[KEY_THEME] = mode }
+
+    suspend fun setAsrModelId(id: String) = edit { it[KEY_ASR_MODEL] = id }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)
@@ -189,5 +194,8 @@ class SettingsStore(private val context: Context) {
         val KEY_FLOAT_DISMISS_MS = longPreferencesKey("floating_dismiss_ms")
         val KEY_BUBBLE = booleanPreferencesKey("bubble_enabled")
         val KEY_THEME = stringPreferencesKey("theme_mode")
+
+        /** 当前使用的离线 ASR 模型 id（空 = 用内置默认） */
+        val KEY_ASR_MODEL = stringPreferencesKey("asr_model_id")
     }
 }

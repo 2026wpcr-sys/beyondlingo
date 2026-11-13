@@ -42,6 +42,19 @@ class BidirectionalResolver(
     /** 上次判定的方向，供 UI 显示 */
     val lastResolvedSide: Side get() = lastSide
 
+    /**
+     * 轮流对话场景下推进方向：这次是谁说的，交换给下一段。
+     *
+     * 单麦克风无法判断物理上是谁在说，但「双方轮流说」是最可靠的假设
+     * （用户明确描述的场景：双方轮流说，说完一段再翻译）。
+     * 首段由 Whisper 自动检测确定，之后按此交替。
+     */
+    fun nextSide(current: Side): Side = when (current) {
+        Side.LEFT -> Side.RIGHT
+        Side.RIGHT -> Side.LEFT
+        Side.UNKNOWN -> Side.UNKNOWN
+    }
+
     fun reset() {
         lastSide = Side.UNKNOWN
     }

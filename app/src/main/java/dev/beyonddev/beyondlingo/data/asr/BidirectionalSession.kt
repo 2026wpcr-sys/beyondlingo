@@ -33,6 +33,15 @@ class BidirectionalSession(
     private val engineConfig: EngineConfig,
     private val scope: CoroutineScope,
     private val onEvent: (Event) -> Unit,
+    /**
+     * 对话翻译模式（双方轮流说，说完一段再翻译）。
+     *
+     * 非 null 时语种由 UI 按钮**显式指定**，不再靠 Whisper 猜、也不轮流推断：
+     * - 传给 Whisper 固定语言（构造期 language 字段），消除短片段语种误判
+     * - 方向 = 说的语种 → 另一侧语种，永远正确
+     * 这是识别质量最稳的形态。
+     */
+    private val forcedSpeakSide: BidirectionalResolver.Side? = null,
 ) {
 
     private companion object {
@@ -67,6 +76,15 @@ class BidirectionalSession(
     private var consumerJob: kotlinx.coroutines.Job? = null
     @Volatile private var segmentId = 0
     @Volatile private var lastSpeaking = false
+
+    /** 上一轮判定出的语种（Whisper 语言码），用于下一段的语种预判 */
+    @Volatile private var lastLangCode: String? = null
+
+    /** 上一轮的识别文本，作为下一段的 initial_prompt 给 Whisper 上下文 */
+    @Volatile private var lastText: String = ""
+
+    /** 上一轮判定出的说话方；null 表示还没有第一段 */
+    @Volatile private var lastSide: BidirectionalResolver.Side? = null
 
     val isRunning: Boolean get() = recorder != null
 
@@ -105,6 +123,9 @@ class BidirectionalSession(
         consumerJob?.cancel()
         consumerJob = null
         lastSpeaking = false
+        lastLangCode = null
+        lastText = ""
+        lastSide = null
     }
 
     private fun rmsOf(a: FloatArray): Float {
@@ -114,26 +135,143 @@ class BidirectionalSession(
         return kotlin.math.sqrt(s / a.size).toFloat()
     }
 
+    /** LangEnum → Whisper 语言码（zh / es / en / ja …） */
+    private fun langToWhisperCode(lang: dev.beyonddev.beyondlingo.data.engine.LangEnum): String =
+        when (lang.code.substringBefore('-').lowercase()) {
+            "zh" -> "zh"
+            "es" -> "es"
+            "en" -> "en"
+            "ja" -> "ja"
+            "ko" -> "ko"
+            "fr" -> "fr"
+            "de" -> "de"
+            "ru" -> "ru"
+            "pt" -> "pt"
+            "it" -> "it"
+            else -> lang.code.substringBefore('-').lowercase()
+        }
+
     private suspend fun handleSegment(samples: FloatArray) {
         if (samples.isEmpty()) return
 
+        // ---- 对话翻译模式：语种由按钮显式指定 ----
+        // 不做自动检测、不轮流推断。方向固定、语言固定，识别质量最稳。
+        val forced = forcedSpeakSide
+        if (forced != null) {
+            val side = forced
+            val sourceLang = when (side) {
+                BidirectionalResolver.Side.LEFT -> resolver.leftLanguage
+                BidirectionalResolver.Side.RIGHT -> resolver.rightLanguage
+                else -> return
+            }
+            val targetLang = when (side) {
+                BidirectionalResolver.Side.LEFT -> resolver.rightLanguage
+                BidirectionalResolver.Side.RIGHT -> resolver.leftLanguage
+                else -> return
+            }
+
+            val hint = langToWhisperCode(sourceLang)
+            val t0 = System.nanoTime()
+            val res = whisper.transcribeFixedLanguage(samples, hint, lastText) ?: return
+            val asrMs = (System.nanoTime() - t0) / 1_000_000
+            lastText = res.text
+
+            val id = segmentId++
+            val label = "${sourceLang.labelZh} → ${targetLang.labelZh}"
+            Log.i(TAG, "seg#$id fixed=$hint side=$side asr=${asrMs}ms text='${res.text}'")
+
+            onEvent(
+                Event.Recognized(
+                    segmentId = id,
+                    text = res.text,
+                    side = side,
+                    directionLabel = label,
+                    inherited = false,
+                )
+            )
+            translate(id, res.text, sourceLang, targetLang)
+            return
+        }
+
+        // ---- 语种与方向判定 ----
+        //
+        // 关键约束：Whisper 固定语言后，返回的 lang 恒等于提示语种，
+        // 若靠 lang 判定方向，方向就永远不会切换。所以：
+        //
+        //  - 首段：放开自动检测（不固定语言），由 Whisper 判出是谁在说
+        //  - 后续段：轮流对话场景下，按「交替」推进方向；
+        //    同时给 Whisper 固定上一轮的语种 + initial_prompt 上下文，
+        //    避免短片段语种判错和上下文缺失
+        //
+        // 这套「首段自动 + 之后交替 + 继承上下文」对应翻译鸥的
+        // inheritMatchingRecognizingLanguage 思路。
+
+        val firstSegment = lastSide == null
+        val hint = if (firstSegment) null else lastLangCode
+        val prompt = if (firstSegment) null else lastText.takeIf { it.isNotBlank() }
+
         val t0 = System.nanoTime()
-        val res = whisper.transcribe(samples) ?: return
+        val res = whisper.transcribe(samples, prompt = prompt) ?: return
         val asrMs = (System.nanoTime() - t0) / 1_000_000
 
-        val detected = BidirectionalResolver.fromWhisperCode(res.lang)
-        val decision = resolver.resolve(detected)
+        val detected = if (firstSegment) {
+            // 首段让 Whisper 自己判
+            BidirectionalResolver.fromWhisperCode(res.lang)
+        } else {
+            // 后续段用上一轮判定出的语种（轮流对话下不会变）
+            hint?.let { BidirectionalResolver.fromWhisperCode(it) }
+        }
 
-        if (decision.side == BidirectionalResolver.Side.UNKNOWN) {
+        // 方向：首段由 Whisper 判出的语种决定；之后按轮流交替
+        val side = if (firstSegment) {
+            when (detected) {
+                null -> BidirectionalResolver.Side.UNKNOWN
+                else -> {
+                    // detected 是 LangEnum，与左右槽比对
+                    if (detected == resolver.leftLanguage) BidirectionalResolver.Side.LEFT
+                    else if (detected == resolver.rightLanguage) BidirectionalResolver.Side.RIGHT
+                    else BidirectionalResolver.Side.UNKNOWN
+                }
+            }
+        } else {
+            resolver.nextSide(lastSide ?: BidirectionalResolver.Side.UNKNOWN)
+        }
+
+        if (side == BidirectionalResolver.Side.UNKNOWN) {
             Log.i(TAG, "skip unresolved: lang='${res.lang}' text='${res.text}'")
             return
         }
 
+        val sourceLang = when (side) {
+            BidirectionalResolver.Side.LEFT -> resolver.leftLanguage
+            BidirectionalResolver.Side.RIGHT -> resolver.rightLanguage
+            else -> null
+        }
+        val targetLang = when (side) {
+            BidirectionalResolver.Side.LEFT -> resolver.rightLanguage
+            BidirectionalResolver.Side.RIGHT -> resolver.leftLanguage
+            else -> null
+        }
+        if (sourceLang == null || targetLang == null) return
+
+        val decidedCode = langToWhisperCode(sourceLang)
+
+        if (hint != null && res.lang.isNotEmpty() && !res.lang.startsWith(hint)) {
+            Log.i(
+                TAG,
+                "lang conflict: hint=$hint whisper=${res.lang} text='${res.text}'"
+            )
+        }
+
+        lastSide = side
+        lastLangCode = decidedCode
+        lastText = res.text
+
         val id = segmentId++
-        val label = "${decision.sourceLang.labelZh} → ${decision.targetLang.labelZh}"
+        val label = "${sourceLang.labelZh} → ${targetLang.labelZh}"
         Log.i(
             TAG,
-            "seg#$id lang=${res.lang} side=${decision.side} inherited=${decision.inherited} " +
+            "seg#$id lang=${res.lang} side=$side hint=${hint ?: "-"} " +
                 "asr=${asrMs}ms text='${res.text}'"
         )
 
@@ -141,22 +279,13 @@ class BidirectionalSession(
             Event.Recognized(
                 segmentId = id,
                 text = res.text,
-                side = decision.side,
+                side = side,
                 directionLabel = label,
-                inherited = decision.inherited,
+                inherited = !firstSegment,
             )
         )
 
-        val outcome = withContext(Dispatchers.IO) {
-            repo.translate(
-                text = res.text,
-                source = decision.sourceLang,
-                target = decision.targetLang,
-                engineId = engineId,
-                config = engineConfig,
-            )
-        }
-
+        val outcome = translate(id, res.text, sourceLang, targetLang)
         when (outcome) {
             is TranslateOutcome.Success ->
                 onEvent(Event.Translated(id, outcome.text, false))
@@ -164,5 +293,20 @@ class BidirectionalSession(
             is TranslateOutcome.Failure ->
                 onEvent(Event.Translated(id, "⚠ ${outcome.message}", true))
         }
+    }
+
+    private suspend fun translate(
+        id: Int,
+        text: String,
+        sourceLang: dev.beyonddev.beyondlingo.data.engine.LangEnum,
+        targetLang: dev.beyonddev.beyondlingo.data.engine.LangEnum,
+    ): TranslateOutcome = withContext(Dispatchers.IO) {
+        repo.translate(
+            text = text,
+            source = sourceLang,
+            target = targetLang,
+            engineId = engineId,
+            config = engineConfig,
+        )
     }
 }

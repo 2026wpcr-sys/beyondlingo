@@ -2,12 +2,14 @@ package dev.beyonddev.beyondlingo.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -27,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,8 +65,9 @@ fun ModelManagerScreen(
                 .padding(horizontal = 20.dp),
         ) {
             Text(
-                text = "模型默认从内置清单下载，无需额外配置。" +
-                    "若你有自己的云空间，可填入 manifest 地址覆盖（需 HTTPS 直链且支持 Range）。",
+                text = "对话翻译需要先下载一个语音模型。体积越大精度越高，按需选择：" +
+                    "tiny 极速 / base 均衡 / small 高精度 / turbo 最高。" +
+                    "下载后点「设为当前」切换。",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -109,10 +113,37 @@ fun ModelManagerScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 val ready = state.ready[entry.id] == true
                                 val prog = state.progress[entry.id]
+                                val isActive = ready && entry.kind == "asr-offline" &&
+                                    (state.selectedAsrId == entry.id ||
+                                        (state.selectedAsrId.isEmpty() &&
+                                            entry.id == "whisper-base-int8"))
                                 when {
                                     prog != null -> Text(prog, fontSize = 13.sp)
-                                    ready -> Text("已就绪", fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.primary)
+                                    ready -> {
+                                        Text(
+                                            "已就绪",
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        if (entry.kind == "asr-offline") {
+                                            Spacer(Modifier.width(12.dp))
+                                            if (isActive) {
+                                                Text(
+                                                    "使用中",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            } else {
+                                                TextButton(
+                                                    onClick = { viewModel.selectAsrModel(entry) },
+                                                    contentPadding = PaddingValues(
+                                                        horizontal = 8.dp, vertical = 0.dp
+                                                    ),
+                                                ) { Text("设为当前", fontSize = 13.sp) }
+                                            }
+                                        }
+                                    }
                                     else -> TextButton(onClick = { viewModel.download(entry) }) {
                                         Text("下载")
                                     }

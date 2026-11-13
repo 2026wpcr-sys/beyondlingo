@@ -32,11 +32,16 @@ class MainActivity : Activity() {
     }
 
     /** 候选模型：目录前缀 + 显示名 */
-    private data class ModelSpec(val dir: String, val label: String)
+    private data class ModelSpec(
+        val dir: String,
+        val label: String,
+        /** int8 或 fp32 —— 决定文件名后缀 */
+        val quant: String = "int8",
+    )
 
     private val models = listOf(
-        ModelSpec("whisper", "tiny int8 (98.8MB)"),
-        ModelSpec("whisper/base", "base int8 (153.2MB)"),
+        ModelSpec("whisper", "base int8 (153MB)"),
+        ModelSpec("whisper/fp32", "base fp32 (279MB)", quant = "fp32"),
     )
 
     private lateinit var tv: TextView
@@ -83,8 +88,9 @@ class MainActivity : Activity() {
     }
 
     private fun runOne(m: ModelSpec) {
-        val enc = "${m.dir}/encoder.int8.onnx"
-        val dec = "${m.dir}/decoder.int8.onnx"
+        val sfx = if (m.quant == "fp32") "" else ".int8"
+        val enc = "${m.dir}/encoder$sfx.onnx"
+        val dec = "${m.dir}/decoder$sfx.onnx"
         val tok = "${m.dir}/tokens.txt"
 
         // ---- 加载模型 ----
@@ -138,7 +144,37 @@ class MainActivity : Activity() {
         log("  expect ≈ 今天天气不错，我们下午一起去看电影吧。")
         log("")
 
+        // ---- 4. 对比实验：自动检测 vs 固定语言 vs 固定+prompt ----
+        // 定位「识别质量差」是语种误判、上下文缺失，还是模型精度问题
+        compareConfigs(recognizer, "whisper/es-real-2.wav", "ES-real-2", "es", null)
+        log("")
+        compareConfigs(recognizer, "whisper/es-real-3.wav", "ES-real-3", "es", null)
+        log("")
+        compareConfigs(recognizer, "whisper/zh-s1.wav", "ZH-s1", "zh", null)
+        log("")
+        compareConfigs(recognizer, "whisper/zh-s2.wav", "ZH-s2", "zh", null)
+        log("")
+
         recognizer.release()
+    }
+
+    private fun compareConfigs(
+        rec: OfflineRecognizer,
+        path: String,
+        label: String,
+        language: String,
+        prompt: String?,
+    ) {
+        val samples = try {
+            WavReader.readAsset(assets, path, TARGET_RATE)
+        } catch (t: Throwable) {
+            log("$label: read failed ${t.message}")
+            return
+        }
+        log("-- $label (${"%.1f".format(samples.size / TARGET_RATE.toDouble())}s) --")
+        runConfig(rec, samples, label, "A-auto", null, null)
+        runConfig(rec, samples, label, "B-fixed", language, null)
+        runConfig(rec, samples, label, "C-fixed+prompt", language, prompt)
     }
 
     private fun recognizeAsset(rec: OfflineRecognizer, path: String, label: String) {
@@ -164,5 +200,60 @@ class MainActivity : Activity() {
         log("$label out : ${res.text}")
         log("$label lang: ${res.lang}")
         log("$label RTF : ${"%.3f".format(ms / 1000.0 / audioSec)}  (decode ${"%.0f".format(ms)} ms / audio ${"%.2f".format(audioSec)} s)")
+    }
+
+    /**
+     * 对比实验：同一段音频，三种配置
+     *   A 自动检测（当前线上行为）
+     *   B 固定语言（消除短片段语种误判）
+     *   C 固定语言 + initial_prompt（补上下文）
+     *
+     * 用于定位「识别质量差」到底是语种误判、上下文缺失，还是模型本身精度。
+     */
+    private fun compareConfigs(
+        rec: OfflineRecognizer,
+        samples: FloatArray,
+        label: String,
+        language: String,
+        prompt: String?,
+    ) {
+        log("-- $label --")
+
+        // A 自动检测
+        runConfig(rec, samples, label, "A-auto", null, null)
+        // B 固定语言
+        runConfig(rec, samples, label, "B-fixed", language, null)
+        // C 固定语言 + prompt
+        runConfig(rec, samples, label, "C-fixed+prompt", language, prompt)
+    }
+
+    private fun runConfig(
+        rec: OfflineRecognizer,
+        samples: FloatArray,
+        label: String,
+        tag: String,
+        language: String?,
+        prompt: String?,
+    ) {
+        val audioSec = samples.size / TARGET_RATE.toDouble()
+        val t0Nano = System.nanoTime()
+        try {
+            val stream = if (prompt != null) rec.createStream(prompt) else rec.createStream()
+            try {
+                if (language != null) {
+                    runCatching { stream.setOption("language", language) }
+                }
+                stream.acceptWaveform(samples, TARGET_RATE)
+                rec.decode(stream)
+                val res = rec.getResult(stream)
+                val ms = (System.nanoTime() - t0Nano) / 1_000_000.0
+                log("  $tag  lang=${res.lang}  rtf=${"%.3f".format(ms / 1000.0 / audioSec)}")
+                log("  $tag  text=${res.text}")
+            } finally {
+                stream.release()
+            }
+        } catch (t: Throwable) {
+            log("  $tag  ERR ${t.message}")
+        }
     }
 }

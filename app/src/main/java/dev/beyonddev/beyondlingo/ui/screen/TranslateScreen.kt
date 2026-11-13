@@ -158,7 +158,7 @@ fun TranslateScreen(
                 },
                 actions = {
                     IconButton(onClick = onOpenSimult) {
-                        Icon(Icons.Default.Mic, contentDescription = "同声传译")
+                        Icon(Icons.Default.Mic, contentDescription = "对话翻译")
                     }
                     IconButton(onClick = onOpenOcr) {
                         Icon(Icons.Default.Image, contentDescription = "图片取词")

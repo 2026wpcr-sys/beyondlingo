@@ -2,7 +2,7 @@
 
 > **用途**：开启新对话时，把本文档交给 AI 作为上下文，即可无缝接手。
 >
-> **最后更新**：2026-10-31 · 版本 1.3.0
+> **最后更新**：2026-11-12 · 版本 1.4.0
 
 ---
 
@@ -162,6 +162,61 @@ cd "<工作区>"
 
 ---
 
+### 4.5 v1.4.0 新增（全部真机 arm64 验证）
+
+**同声传译**（`vm/SimultViewModel.kt` + `ui/screen/SimultScreen.kt` + `data/asr/`）
+
+- 麦克风 16kHz / 单声道 / PCM16 采集（`AudioRecorder`），100ms 分块，采集线程只搬运不推理
+- sherpa-onnx 流式识别（`AsrEngine`），partial / final 双态，端点静音阈值 **0.6s**（官方默认 1.2s 太慢）
+- 字幕状态机：`Partial` 更新临时字幕，`Final` 追加 `SubtitleLine(translating=true)`，
+  翻译回来原地替换 —— 不追加新行，避免「原文先冒出来、译文后补」的割裂感
+- **音频不出设备**，只有识别后的文字发往翻译服务；UI 底部有明确文案
+- 翻译固定走 Yandex（免配置），目标语言取 `settings.foreignLang`
+  —— 关键：若沿用 `defaultTargetLang` 等于「中文→中文」不翻译
+- `SimultForegroundService`（`foregroundServiceType="microphone"`）保活，
+  否则 Activity 退后台后录音被系统掐断
+
+**悬浮字幕**（`service/SimultOverlayService.kt` + `data/SimultOverlayBus.kt`）
+
+- 用**原生 View**渲染，不用 Compose —— 见 9.10 的坑
+- `SimultOverlayBus` 单例 StateFlow 单向推送，与划词悬浮窗（640 行）完全分离
+- 底部半透明面板，显示最近 3 条双语字幕 + 当前 partial
+
+**视频翻译**（`data/video/` + `vm/VideoViewModel.kt` + `ui/screen/VideoScreen.kt`）
+
+- 依赖 `dev.ffmpegkit-maintained:ffmpeg-kit-audio:8.1.7`（Arthenica 官方 2025-01 退役，社区 drop-in）
+  + `androidx.media3:media3-exoplayer/ui:1.9.0`
+- 流程：SAF 落盘 → 抽 16k wav → 分块识别 → 逐段翻译 → 双语 SRT → Media3 播放 / 导出
+- **视频只读不重编码**（烧录硬字幕代价太大，已明确排除）
+- 双语靠「同一条字幕内两行文本」实现，不用双字幕轨
+- 已知近似：SRT 时间轴按累计喂入样本数推算，端点静音的尾部让上界略偏后
+
+**文档翻译**（`data/document/` + `vm/DocumentViewModel.kt` + `ui/screen/DocumentScreen.kt`）
+
+- 支持 `txt` / `md` / `docx`
+- docx 用 `java.util.zip` + `XmlPullParser` **自研**，绝不引 Apache POI（见 9.11）
+- 丢弃 `w:delText`（修订删除内容）、`w:instrText`（域代码），递归进入 `w:sdt`
+- 标题优先用 `w:outlineLvl`（中文模板 styleId 常是 `a3`/`1` 而非 `Heading1`）
+- `TextDecoder` 三级编码探测：BOM → 严格 UTF-8 试解 → GB18030
+- 按**块**翻译（段落级语义更完整，回填零歧义），超长块按句切
+
+**模型自带托管**（`data/model/` + `vm/ModelManagerViewModel.kt` + `ui/screen/ModelManagerScreen.kt`）
+
+- manifest + 断点续传（HTTP Range）+ 逐文件 SHA-256 校验 + `.done` 标记
+- 每个模型文件独立直链，**不做压缩包解压**（Android 无 bz2 依赖，避免引第三方库）
+- `SherpaExternalLoader` 反射 private `newFromFile` 从绝对路径加载（见 9.12）
+- 支持 ASR / 标点 / TTS 三类，模板见 `docs/models-manifest.example.json`
+
+**其他**
+
+- 标点恢复：`sherpa-onnx-punct-ct-transformer-zh-en-int8`（只需 `model.int8.onnx`，72MB）
+  —— 原文照旧无标点展示，**补标点后的文本送翻译**，改善断句但不改用户看到的识别结果
+- 可选本地 TTS：Matcha zh-en，AudioTrack 播放，默认关闭
+- `asrprobe` 独立模块：sherpa-onnx 性能与能力验证工具（包名 `dev.beyonddev.asrprobe`，
+  应用名 ASR Probe，与主应用零共享业务代码）
+
+---
+
 ## 五、🔑 关键技术决策（改代码前必读）
 
 ### 5.1 为什么不用剪贴板监听
@@ -250,27 +305,57 @@ beyondlingo/
 │   ├── data/
 │   │   ├── SettingsStore.kt       DataStore 设置（AppSettings）
 │   │   ├── TranslateRepository.kt 仓库层（缓存/持久化/同语言保护）
+│   │   ├── SimultOverlayBus.kt    同传字幕总线（ViewModel → 悬浮窗单向推送）
 │   │   ├── db/                    Room: HistoryEntity/Dao/AppDatabase
 │   │   ├── engine/                引擎: EngineRegistry/CustomEngine/YandexEngine/Http/TranslateEngine/LangEnum
-│   │   └── ocr/OcrEngine.kt       ML Kit 封装
+│   │   ├── ocr/OcrEngine.kt       ML Kit 封装
+│   │   ├── asr/                   【v1.4.0】
+│   │   │   ├── AudioRecorder.kt           16kHz PCM16 采集，100ms 分块
+│   │   │   ├── AsrEngine.kt               sherpa-onnx 流式封装，partial/final
+│   │   │   ├── PunctuationEngine.kt       标点恢复（ct-transformer zh-en）
+│   │   │   ├── TtsEngine.kt               朗读（Matcha zh-en + AudioTrack）
+│   │   │   ├── SherpaExternalLoader.kt    反射 newFromFile 加载外部模型
+│   │   │   └── WavUtil.kt                 WAV 解析
+│   │   ├── model/                 【v1.4.0】模型云分发
+│   │   │   ├── ModelManifest.kt           manifest 结构 + org.json 解析
+│   │   │   └── ModelDownloader.kt         断点续传 + SHA-256 校验
+│   │   ├── video/                 【v1.4.0】
+│   │   │   ├── Srt.kt                     双语 SRT 生成
+│   │   │   └── VideoTranslator.kt         抽音频→识别→翻译→字幕
+│   │   └── document/              【v1.4.0】
+│   │       ├── DocumentParser.kt          txt/md/docx 解析（docx 自研）
+│   │       ├── TextDecoder.kt             BOM/UTF-8/GB18030 三级探测
+│   │       └── DocumentTranslator.kt      按块翻译 + 导出
 │   ├── service/
 │   │   ├── SelectionAccessibilityService.kt  无障碍划词（白名单）
-│   │   ├── FloatingWindowService.kt          悬浮窗 + 悬浮球
+│   │   ├── FloatingWindowService.kt          悬浮窗 + 悬浮球（划词用）
+│   │   ├── SimultForegroundService.kt        【v1.4.0】麦克风前台服务保活
+│   │   ├── SimultOverlayService.kt           【v1.4.0】同传悬浮字幕（原生 View）
 │   │   └── ClipboardWriter.kt                剪贴板写入
 │   ├── ui/
 │   │   ├── component/LanguageSelector.kt
 │   │   ├── overlay/OverlayContent.kt         译文卡片
 │   │   ├── overlay/FloatingBubble.kt         悬浮球
 │   │   ├── screen/{Translate,History,Settings,Ocr,Splash}Screen.kt
+│   │   ├── screen/{Simult,Video,Document,ModelManager}Screen.kt   【v1.4.0】
 │   │   └── theme/{Theme,Type}.kt
 │   ├── util/{Debouncer,TriggerGate,LanguageDetector,DirectionResolver}.kt
 │   │                              DirectionResolver: 双语模式方向判定（二分类）
 │   └── vm/{Translate,History,Ocr}ViewModel.kt
+│       vm/{Simult,Video,Document,ModelManager}ViewModel.kt        【v1.4.0】
+├── app/libs/                      【gitignored】sherpa-onnx AAR + 模型
+├── app/src/main/assets/asr/       【gitignored】内置 14M 中文模型
+├── asrprobe/                      【v1.4.0】独立的 sherpa-onnx 验证工具模块
+├── WAYFINDER.md                   【v1.4.0】决策地图（为什么这样设计）
+├── wayfinder/                     【v1.4.0】决策票据（8 张，含实测数据）
 ├── app/proguard-rules.pro
 ├── NOTICE.md                      二次开发声明（必读）
 ├── README.md
 ├── PROJECT.md                     完整技术设计
 ├── docs/ADR.md                   架构决策记录
+├── docs/simult-implementation.md 【v1.4.0】同传实施记录与真机实测
+├── docs/transgull-simult-reference.md 【v1.4.0】翻译鸥方案拆解
+├── docs/models-manifest.example.json  【v1.4.0】云空间模型清单模板
 └── dist/                         发布产物（已 gitignore）
 ```
 
@@ -279,8 +364,8 @@ beyondlingo/
 ## 七、Git 状态
 
 ```
-分支：main（与 origin/main 同步）
-Tag ：v1.3.0（已推送，Release 已发布）
+分支：main（v1.4.0 已提交，待推送）
+Tag ：v1.3.0（已推送，Release 已发布）· v1.4.0（待打）
 提交：见下方历史
 ```
 
@@ -297,6 +382,9 @@ Tag ：v1.3.0（已推送，Release 已发布）
 1d092fa docs: PROJECT 中 sdk.dir 示例路径改为占位符
 954f00c feat: 双向自动判定方向（v1.2.0）          8 files, +336 -39
 2e2f14e docs: 同步 v1.2.0 状态到 HANDOVER 与 README
+9460c7e release: 1.3.0 —— 更换签名密钥（versionCode 4）
+fe81f3d docs: README 拆分为英文摘要 + 中文详细
+c60bc88 feat: 1.4.0 —— 同传、视频/文档翻译、模型自带托管  48 files, +5101 -2
 ```
 
 > 说明：仓库的 git 历史从 `c0afa1b`（首次公开前的交接文档提交）开始，
@@ -463,6 +551,107 @@ $env:JAVA_HOME = "<JDK 21>"
 & "<SDK>\build-tools\36.0.0\apksigner.bat" verify --print-certs app-release.apk
 # SHA-256 应与离线记录的当前证书一致（1.3.0 起为新证书）
 ```
+
+> 1.3.0 → 1.4.0 **签名未变**，可以直接覆盖升级，不需要卸载。
+> 只有 1.2.0 及更早的旧签名用户才需要卸载重装。
+
+---
+
+### 9.10 ComposeView 挂 WindowManager 会崩
+
+```
+IllegalStateException: ViewTreeLifecycleOwner not found from ComposeView
+```
+
+`ComposeView` 需要 `ViewTreeLifecycleOwner` / `ViewTreeSavedStateRegistryOwner` /
+`ViewTreeViewModelStoreOwner` 三个 owner。纯 `Service`（即便继承 `LifecycleService`）
+只提供了第一个，加到 WindowManager 时立刻崩。
+
+**已在真机复现（v1.4.0 悬浮字幕）**。两条路：
+- 继承并实现 `SavedStateRegistryOwner` + `ViewModelStoreOwner`，然后给 view 设三个 owner
+- **改用原生 View**（本项目采用）—— 悬浮字幕只有几行文字，原生更轻也更稳
+
+`FloatingWindowService`（划词用）走的是第一条路，注意别改坏。
+
+---
+
+### 9.11 Apache POI 在 Android 上会崩
+
+解析 docx 时不要引 POI：
+
+```
+java.lang.NoClassDefFoundError: Ljava/awt/Color;
+```
+
+POI 依赖 `java.awt` 与 `javax.xml.stream`，Android 都没有；POI 6.0.0 起还要求 Java 17。
+`poi-android`（字节码转译版）仓库 2022-11 已归档。体积上 POI 全家桶也是 12MB+。
+
+**本项目做法**：`java.util.zip` + `android.util.Xml` 自研解析 `word/document.xml`，
+体积增量 ≈ 0，还能精确拿到段落/标题/表格结构。
+
+注意两个必须丢弃的标签：`w:delText`（修订删除内容）、`w:instrText`（域代码），
+否则译文会混入作废内容。`w:sdt/w:sdtContent` 要递归进去。
+
+同理：PDF 不要用 iText（AGPLv3 会污染闭源分发）；`pdfbox-android` 2023-01 后停更。
+
+---
+
+### 9.12 sherpa-onnx 绝对路径会 native 崩溃
+
+AAR v2.0.1 的 Kotlin 包装**只暴露 `AssetManager` 构造器**，但 native 层同时导出了
+`newFromFile`（支持绝对路径）。把绝对路径传给公开构造器会**进程直接死亡**，
+没有 Java 异常、crash buffer 为空，极难定位。
+
+```java
+// javap -p 确认：方法存在但被声明为 private
+private final native long newFromFile(OnlineRecognizerConfig);
+private long ptr;
+private final OnlineRecognizerConfig config;
+```
+
+**本项目做法**（`data/asr/SherpaExternalLoader.kt`）：
+```kotlin
+// 1. Unsafe.allocateInstance 跳过构造器（构造器必然走 newFromAsset）
+val inst = unsafe.allocateInstance(klass)
+// 2. 反射调 private newFromFile
+val ptr = klass.getDeclaredMethod("newFromFile", configClass)
+    .apply { isAccessible = true }.invoke(inst, config) as Long
+// 3. 把 ptr / config 填回字段
+klass.getDeclaredField("ptr").apply { isAccessible = true }.setLong(inst, ptr)
+```
+
+**风险**：依赖内部字段名与方法名，升级 AAR 必须复测；`sun.misc.Unsafe` 长期可用性存疑。
+**长期正解**：fork 上游把 `newFromFile` 改成 public 后自编译 AAR，或给上游提 PR。
+
+实测对照（x86_64 模拟器 / SDK 34）：
+
+| 方式 | 结果 |
+|---|---|
+| `newFromAsset` + assets 路径 | ✅ 成功 |
+| `newFromAsset` + 绝对路径 | ❌ native 崩溃 |
+| 反射 `newFromFile` + 绝对路径 | ✅ 成功，识别结果一致 |
+
+---
+
+### 9.13 realme 不响应「悬浮窗授权」跳转
+
+`Settings.ACTION_MANAGE_OVERLAY_PERMISSION` 在 realme UI 上点击后**停在原页**，
+用户无从授权。`adb shell appops set ... SYSTEM_ALERT_WINDOW allow` 也会被拒
+（`uid 2000 does not have MANAGE_APP_OPS_MODES`）。
+
+**本项目做法**：三级降级 + 文案指引
+```
+MANAGE_OVERLAY_PERMISSION → APPLICATION_DETAILS_SETTINGS → 提示手动路径
+设置 → 应用 → 无界译 → 其他权限 → 显示在其他应用上层
+```
+`startActivity` 记得加 `FLAG_ACTIVITY_NEW_TASK`。
+
+---
+
+### 9.14 启动页期间点击被吞
+
+SplashScreen 展示期间，顶部图标点击无响应。不影响使用，
+若要打磨可在 splash 期间屏蔽交互，或让 splash 更快退出。
 
 **如果忘了换 keystore 就构建**：`validateSigningRelease` 可能显示 `UP-TO-DATE`
 （Gradle 缓存），产出的 APK 仍是旧签名。**必须用 apksigner 实际验证证书指纹**，

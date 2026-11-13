@@ -81,15 +81,45 @@ Android 上这些机制**全部需要重新实现**，且交互范式完全不�
 | 🧭 **悬浮窗** | 可拖动、可关闭、显示译文 |
 | 🧭 **设置页** | 引擎切换、API Key 配置、自动翻译开关 |
 
-### 本期不做
+### v1.4.0 已实现（在原「本期不做」之外新增）
+
+| 功能 | 实现方式 | 状态 |
+| --- | --- | --- |
+| **同声传译** | 麦克风 → sherpa-onnx 本地流式识别 → 云端翻译 → 双语字幕 | ✅ 真机验证 |
+| **悬浮字幕** | 独立 Service + 原生 View，与划词悬浮窗分离 | ✅ 真机验证 |
+| **TTS 朗读** | Matcha zh-en 离线合成 + AudioTrack 播放（原「本期不做」已实现） | ✅ 代码完成 |
+| **视频翻译** | FFmpegKit 抽音频 → 识别 → 翻译 → 双语 SRT | ✅ 模拟器验证 |
+| **文档翻译** | txt/md/docx，docx 自研解析 | ✅ 模拟器验证 |
+| **模型自带托管** | manifest + 断点续传 + SHA-256，支持 ASR/标点/TTS | ✅ 加载路径已验证 |
+
+**同传的架构取舍**（详见 `WAYFINDER.md` 与 `wayfinder/`）：
+
+| 决策 | 结论 | 理由 |
+| --- | --- | --- |
+| ASR 引擎 | sherpa-onnx 流式 Zipformer | 真机 RTF ≈ 0.02，算力富余；AAR 不在 Maven Central，需从 Release 下 |
+| 翻译层 | **混合**：音频本地、文字云端 | 全离线需 ML Kit 30MB/语言对且长段落质量降；全云端则音频外发 |
+| 端点阈值 | 0.6s（官方默认 1.2s） | 等 final 再翻译会明显拖慢字幕 |
+| 视频输出 | App 内播放 + 导出 .srt | 烧录硬字幕要整片重编码，代价不匹配 |
+| 同传界面 | 全屏 + 悬浮双模式 | 同传常在通话/会议中用，需要边看别的 App 边看译 |
+| docx 解析 | 自研（不用 POI） | POI 依赖 java.awt，Android 上崩且 12MB+ |
+
+### 本期不做（v1.4.0 更新）
 
 | 功能 | 原因 |
 | --- | --- |
 | ❌ **截图 OCR** | 需 MediaProjection 授权 + 区域框选，是独立大模块。v2 考虑 |
-| ❌ **TTS 朗读** | Android 有系统 TTS，但需单独做引擎适配 |
 | ❌ **生词本** | 依赖 TTS + 词典，v3 考虑 |
 | ❌ **插件系统** | Android 无 .NET 反射，需重新设计（见[路线图](#开发路线图)） |
 | ❌ **多引擎并排对比** | 已决策为单引擎 + 设置切换，降低复杂度 |
+| ❌ **在线会议同传** | 需 LiveKit 服务器 + 会议机器人 |
+| ❌ **电话翻译** | 需 SIP 中继 / PSTN 号码 |
+| ❌ **直播悬浮字幕** | Android 16 MediaProjection 限制多，收益低 |
+| ❌ **硬字幕烧录** | 整片重编码，耗时与发热代价不匹配 |
+| ❌ **PDF 文档翻译** | 无结构语义（只有坐标），扫描件还需 OCR；推迟到 MVP+1 |
+| ❌ **xlsx / pptx** | 表格翻译价值低且破坏版式，且必须拉 POI 全家桶 |
+
+> TTS 朗读原先列在「本期不做」，v1.4.0 已实现（离线 Matcha，默认关闭）。
+
 
 ### 决策记录
 
@@ -156,6 +186,20 @@ Android 上这些机制**全部需要重新实现**，且交互范式完全不�
 | 导航 | Navigation Compose | 2.9.5 | 单 Activity 多屏 |
 | 权限 | Accompanist Permissions | 0.36.0 | Compose 权限简化 |
 
+**v1.4.0 新增依赖**
+
+| 组件 | 选型 | 版本 | 说明 |
+| --- | --- | --- | --- |
+| 离线 ASR | sherpa-onnx | 2.0.1 | AAR 在 GitHub Release，**不在 Maven Central**；只暴露 assets 构造器 |
+| 视频抽音频 | ffmpeg-kit-audio | 8.1.7 | Arthenica 官方 2025-01 退役，用 `dev.ffmpegkit-maintained` drop-in，只取 audio 变体 |
+| 视频播放 | Media3 ExoPlayer / UI | 1.9.0 | 原生支持 side-loaded 字幕 |
+| 标点恢复 | sherpa-onnx punct ct-transformer | zh-en int8 | 只需 `model.int8.onnx` 一个文件（72MB） |
+| 离线 TTS | sherpa-onnx Matcha | zh-en | RTF 0.391（MeloTTS 是 2.518，手机没余量） |
+
+> 未引入 kotlinx.serialization —— manifest 用内置 `org.json` 手写解析；
+> 未引入 Apache POI —— docx 用 `java.util.zip` + `XmlPullParser` 自研。
+
+
 ### SDK 版本
 
 ```
@@ -173,6 +217,13 @@ compileSdk= 36
 ## 模块设计
 
 ### 目录结构
+
+> ⚠️ 本节是**早期设计稿**，包名 `com.stranslate.android` 与最终实现
+> `dev.beyonddev.beyondlingo` 不一致。**当前真实结构以
+> [HANDOVER.md 第六章](HANDOVER.md) 为准**（含 v1.4.0 新增的
+> `data/asr` `data/model` `data/video` `data/document`、
+> `service/Simult*`、`ui/screen/{Simult,Video,Document,ModelManager}Screen`、
+> `vm/{Simult,Video,Document,ModelManager}ViewModel`）。
 
 ```
 app/src/main/java/com/stranslate/android/

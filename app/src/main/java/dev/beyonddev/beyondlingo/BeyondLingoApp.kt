@@ -63,8 +63,8 @@ object Brand {
     /** 英文应用名 */
     const val APP_NAME_EN = "BeyondLingo AI"
 
-    /** 版本号 */
-    const val VERSION = "1.5.4"
+    /** 版本号（发版时与 build.gradle.kts 的 versionName 一起改） */
+    const val VERSION = "1.5.5"
 
     /** 中文署名 */
     const val AUTHOR_ZH = "无界者"

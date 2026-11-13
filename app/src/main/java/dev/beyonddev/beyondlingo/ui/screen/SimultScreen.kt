@@ -296,7 +296,11 @@ fun SimultScreen(
             }
 
             Text(
-                text = "双方轮流说，说完停顿即翻译；音频在设备本地识别",
+                text = if (state.cloudAsr) {
+                    "双方轮流说，说完停顿即翻译；识别走云端（Groq），音频会上传"
+                } else {
+                    "双方轮流说，说完停顿即翻译；音频在设备本地识别"
+                },
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

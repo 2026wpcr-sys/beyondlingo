@@ -1,8 +1,5 @@
 package dev.beyonddev.beyondlingo.data.asr
 
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,10 +27,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  *    兼容服务示例（填各自 baseUrl + model + voice 即可）：
  *    - OpenAI:        https://api.openai.com/v1        tts-1 / alloy
- *    - 硅基流动:      https://api.siliconflow.cn/v1    FunAudioLLM/CosyVoice2-0.5B / ...
  *    - MiniMax / 火山 / 其他自建：按其 OpenAI 兼容文档填
  *
  * 3. [Provider.LOCAL] —— 不配置，用本地 Matcha（由 TtsEngine 处理）
+ *
+ * 4. [Provider.EDGE] —— Edge 免费朗读：不在本引擎里合成，
+ *    由 [EdgeTtsEngine]（WebSocket + MP3）处理；这里只保留枚举值，
+ *    供设置层统一解析 provider 字符串。
  *
  * 音频统一按 WAV(PCM16) 解码播放；若服务返回 mp3 会解码失败并记日志，
  * 此时请在服务侧把 response_format 设成 wav。
@@ -54,6 +54,8 @@ class CloudTtsEngine {
         LOCAL("local", "本地语音"),
         AZURE("azure", "Azure 神经语音"),
         OPENAI("openai", "OpenAI 兼容接口"),
+        /** Edge 免费朗读（无需 Key）：合成走 EdgeTtsEngine，这里只作 provider 标识 */
+        EDGE("edge", "Edge 免费朗读"),
         ;
 
         companion object {
@@ -62,11 +64,7 @@ class CloudTtsEngine {
         }
     }
 
-    /**
-     * OpenAI 兼容 TTS 的常用预设，点一下填好 baseUrl / model / voice。
-     *
-     * 注意音色格式：硅基流动要求 `模型名:音色名`，和 OpenAI 的 `alloy` 不同。
-     */
+    /** OpenAI 兼容 TTS 的常用预设，点一下填好 baseUrl / model / voice。 */
     data class Preset(
         val name: String,
         val baseUrl: String,
@@ -78,14 +76,6 @@ class CloudTtsEngine {
 
     object Presets {
         val all = listOf(
-            Preset(
-                name = "硅基流动",
-                baseUrl = "https://api.siliconflow.cn/v1",
-                path = "/audio/speech",
-                model = "FunAudioLLM/CosyVoice2-0.5B",
-                voice = "FunAudioLLM/CosyVoice2-0.5B:anna",
-                note = "中文/英/日/韩强，西语未官方支持",
-            ),
             Preset(
                 name = "OpenAI",
                 baseUrl = "https://api.openai.com/v1",
@@ -117,6 +107,9 @@ class CloudTtsEngine {
                 Provider.LOCAL -> false
                 Provider.AZURE -> apiKey.isNotBlank()
                 Provider.OPENAI -> apiKey.isNotBlank() && endpoint.isNotBlank()
+                // EDGE 不走本引擎（由 EdgeTtsEngine 合成），这里恒为 false，
+                // 调用方按 provider 路由到 EdgeTtsEngine。
+                Provider.EDGE -> false
             }
     }
 
@@ -129,6 +122,9 @@ class CloudTtsEngine {
         Thread(r, "cloud-tts-playback").apply { priority = Thread.NORM_PRIORITY - 1 }
     }
     private val stopped = AtomicBoolean(false)
+
+    /** 播放走共用的 TtsPlayer（PCM / MP3 / stop 三路一致） */
+    private val player = TtsPlayer()
 
     @Volatile private var config: Config = Config()
 
@@ -143,12 +139,15 @@ class CloudTtsEngine {
         val c = config
         if (!c.usable || text.isBlank()) return
         stopped.set(false)
+        player.reset()
         executor.execute {
             if (stopped.get()) return@execute
             try {
                 val bytes = when (c.provider) {
                     Provider.AZURE -> synthAzure(text, lang, c)
                     Provider.OPENAI -> synthOpenAi(text, lang, c)
+                    // EDGE 由 EdgeTtsEngine 合成，不走这里
+                    Provider.EDGE -> null
                     Provider.LOCAL -> null
                 } ?: return@execute
                 val decoded = decodeWav(bytes)
@@ -156,7 +155,7 @@ class CloudTtsEngine {
                     Log.w(TAG, "decode failed (非 WAV/PCM16？检查 response_format)")
                     return@execute
                 }
-                playPcm(decoded.first, decoded.second)
+                player.playPcm(decoded.first, decoded.second)
             } catch (t: Throwable) {
                 Log.w(TAG, "speak failed: ${t.message}")
             }
@@ -236,7 +235,7 @@ class CloudTtsEngine {
     /**
      * 解析 WAV（RIFF/PCM16 mono）→ (samples, sampleRate)。
      *
-     * 必须从 fmt chunk 读采样率：Azure 返回 24kHz，而硅基流动默认 44.1kHz。
+     * 必须从 fmt chunk 读采样率：不同服务采样率不同（如 Azure 24kHz、部分服务 44.1kHz）。
      * 硬编码采样率会导致播放速度不对（音调变尖或变闷）。
      */
     private fun decodeWav(bytes: ByteArray): Pair<FloatArray, Int>? {
@@ -282,48 +281,14 @@ class CloudTtsEngine {
         return out to sampleRate
     }
 
-    private fun playPcm(samples: FloatArray, sampleRate: Int) {
-        val pcm = ShortArray(samples.size) { i ->
-            (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-        }
-        val minBuf = AudioTrack.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        ).coerceAtLeast(pcm.size * 2)
-
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(minBuf)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-
-        try {
-            track.write(pcm, 0, pcm.size)
-            track.play()
-            val ms = (pcm.size * 1000L / sampleRate)
-            Thread.sleep(ms.coerceAtMost(30_000))
-        } catch (t: Throwable) {
-            Log.w(TAG, "play failed: ${t.message}")
-        } finally {
-            runCatching { track.stop() }
-            runCatching { track.release() }
-        }
-    }
-
     fun stopSpeaking() {
         stopped.set(true)
+        player.stop()
+    }
+
+    /** 彻底释放（含播放线程）；只在 ViewModel 销毁时调用 */
+    fun release() {
+        stopSpeaking()
+        executor.shutdown()
     }
 }

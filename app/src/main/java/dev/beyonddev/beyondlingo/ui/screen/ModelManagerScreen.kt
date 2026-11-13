@@ -89,6 +89,7 @@ fun ModelManagerScreen(
                             "local" to "本地",
                             "azure" to "Azure",
                             "openai" to "OpenAI兼容",
+                            "edge" to "Edge（免费）",
                         ).forEach { (id, label) ->
                             val active = state.ttsProvider == id
                             TextButton(
@@ -129,6 +130,24 @@ fun ModelManagerScreen(
                             )
                         }
 
+                        "edge" -> {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "微软 Edge 朗读：免费，无需 Key、无需注册，按语言自动选音色 " +
+                                    "（中文：晓晓；西班牙语：Elvira；英语：Aria）。",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "注意：音频会发送到微软服务器合成（与 Groq 云端识别一样，" +
+                                    "不是纯本地）。Edge 接口未公开，微软改校验时可能暂时不可用，" +
+                                    "失败会自动回退本地朗读。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
                         "openai" -> {
                             Spacer(Modifier.height(6.dp))
                             // 常用服务一键填充
@@ -153,7 +172,7 @@ fun ModelManagerScreen(
                             OutlinedTextField(
                                 value = state.ttsBaseUrl,
                                 onValueChange = { viewModel.setCloudTts(baseUrl = it) },
-                                label = { Text("Base URL（如 https://api.siliconflow.cn/v1）") },
+                                label = { Text("Base URL（如 https://api.openai.com/v1）") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -191,7 +210,7 @@ fun ModelManagerScreen(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "任何兼容 OpenAI /audio/speech 的服务都可用（OpenAI、硅基流动等）。" +
+                                "任何兼容 OpenAI /audio/speech 的服务都可用（如 OpenAI）。" +
                                     "需返回 wav 格式。",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

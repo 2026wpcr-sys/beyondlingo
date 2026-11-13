@@ -40,7 +40,7 @@ data class ModelUiState(
     val azureTtsKey: String = "",
     /** Azure TTS 区域 */
     val azureTtsRegion: String = "eastus",
-    /** 云端 TTS 服务商：local / azure / openai */
+    /** 云端 TTS 服务商：local / azure / openai / edge（Edge 无需 Key、无额外字段） */
     val ttsProvider: String = "local",
     val ttsBaseUrl: String = "",
     val ttsPath: String = "/audio/speech",
@@ -96,7 +96,7 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 保存通用云端 TTS 配置（provider + OpenAI 兼容字段） */
+    /** 保存通用云端 TTS 配置（provider + OpenAI 兼容字段；Edge 只用 provider） */
     fun setCloudTts(
         provider: String = _state.value.ttsProvider,
         apiKey: String = _state.value.ttsApiKey,

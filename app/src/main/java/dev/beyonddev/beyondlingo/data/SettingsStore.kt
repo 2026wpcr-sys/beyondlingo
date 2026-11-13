@@ -79,7 +79,7 @@ data class AppSettings(
     val azureTtsKey: String = "",
     /** Azure TTS 区域（如 eastus / westus2），须与 Key 所在资源匹配 */
     val azureTtsRegion: String = "eastus",
-    /** 云端 TTS 服务商：local / azure / openai */
+    /** 云端 TTS 服务商：local / azure / openai / edge */
     val ttsProvider: String = "local",
     /** OpenAI 兼容 TTS：baseUrl */
     val ttsBaseUrl: String = "",
@@ -130,7 +130,20 @@ class SettingsStore(private val context: Context) {
             azureTtsRegion = prefs[KEY_AZURE_TTS_REGION]
                 ?.takeIf { it.isNotBlank() }
                 ?: "eastus",
-            ttsProvider = prefs[KEY_TTS_PROVIDER] ?: "local",
+            ttsProvider = run {
+                // 1.5.5 迁移：硅基流动 TTS 预设已下线。之前选了它（openai + siliconflow
+                // baseUrl）的用户，升级后自动改用免费的 Edge 朗读；否则会静默继续
+                // 请求一个已删的服务。只在读时迁移，下次写配置时自然落盘。
+                val rawProvider = prefs[KEY_TTS_PROVIDER] ?: "local"
+                val rawBaseUrl = prefs[KEY_TTS_BASE_URL].orEmpty()
+                if (rawProvider == "openai" &&
+                    rawBaseUrl.contains("siliconflow", ignoreCase = true)
+                ) {
+                    "edge"
+                } else {
+                    rawProvider
+                }
+            },
             ttsBaseUrl = prefs[KEY_TTS_BASE_URL].orEmpty(),
             ttsPath = prefs[KEY_TTS_PATH] ?: "/audio/speech",
             ttsModel = prefs[KEY_TTS_MODEL] ?: "tts-1",

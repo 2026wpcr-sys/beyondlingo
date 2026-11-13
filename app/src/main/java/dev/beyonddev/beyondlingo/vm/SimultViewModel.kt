@@ -68,6 +68,8 @@ data class SimultUiState(
     val leftLang: LangEnum = LangEnum.ChineseSimplified,
     /** 双向模式的右侧（对方）语言 */
     val rightLang: LangEnum = LangEnum.Spanish,
+    /** 当前识别是否走云端（Groq）：决定页脚文案，见 refreshExternalModel */
+    val cloudAsr: Boolean = false,
 )
 
 /**
@@ -112,13 +114,28 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val cloudTts = dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine()
 
-    /** 按语言朗读：云端 TTS 可用则走云端，否则本地 Matcha */
+    /** Edge 免费朗读（无需 Key）；是否选用由 ttsProvider 决定 */
+    private val edgeTts = dev.beyonddev.beyondlingo.data.asr.EdgeTtsEngine()
+
+    /** 当前 TTS 服务商（local / azure / openai / edge），由设置流持续同步 */
+    @Volatile
+    private var ttsProvider: String = "local"
+
+    /** 按语言朗读：Edge → 云端 → 本地 Matcha */
     private fun speakOut(text: String, langCode: String) {
         if (!ttsEnabled) return
-        if (cloudTts.isReady) {
-            cloudTts.speak(text, langCode)
-        } else {
-            tts.speak(text)
+        when (ttsProvider) {
+            "edge" -> edgeTts.speak(text, langCode) { failure ->
+                // Edge 失败：先报给 UI；前面还没播出任何音频时才整段回退本地，
+                // 否则会重复播前面已播的部分。
+                _state.update { it.copy(error = failure.message + "，已回退本地朗读") }
+                if (!failure.playedAny) tts.speak(text)
+            }
+            else -> if (cloudTts.isReady) {
+                cloudTts.speak(text, langCode)
+            } else {
+                tts.speak(text)
+            }
         }
     }
 
@@ -140,6 +157,7 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             settingsStore.settings.collect { s ->
                 selectedAsrModelId = s.asrModelId
+                ttsProvider = s.ttsProvider
                 // 云端 TTS 配置：provider 决定走哪套协议
                 val provider = dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine.Provider
                     .from(s.ttsProvider)
@@ -152,6 +170,8 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
                                 s.azureTtsRegion.ifBlank { "eastus" }
                             dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine.Provider.OPENAI ->
                                 s.ttsBaseUrl
+                            // EDGE 由 EdgeTtsEngine 合成，不需要 endpoint；
+                            // LOCAL 不用云端
                             else -> ""
                         },
                         path = s.ttsPath,
@@ -511,6 +531,10 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
         selectedAsrIsCloud = manifest?.models?.any {
             it.id == selectedId && it.kind == "asr-cloud"
         } == true
+        // 同步到 UI 状态：页脚文案按本地/云端识别动态切换
+        if (_state.value.cloudAsr != selectedAsrIsCloud) {
+            _state.update { it.copy(cloudAsr = selectedAsrIsCloud) }
+        }
         val offlineReady = manifest?.models?.filter {
             it.kind == "asr-offline" && downloader.isReady(it)
         }.orEmpty()
@@ -627,7 +651,12 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleTts(): Boolean {
         ttsEnabled = !ttsEnabled
-        if (!ttsEnabled) tts.stopSpeaking()
+        if (!ttsEnabled) {
+            // 三路都要停：以前只停了本地，云端朗读关不掉
+            tts.stopSpeaking()
+            cloudTts.stopSpeaking()
+            edgeTts.stop()
+        }
         return ttsEnabled
     }
 
@@ -660,7 +689,11 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
         SimultOverlayBus.clear()
         engine.release()
         punctuation.release()
-        tts.release()
+        // 以前漏了这三路：whisper / 云端 TTS / Edge TTS 的线程与播放器会泄漏
+        whisper.release()
+        tts.shutdown()
+        cloudTts.release()
+        edgeTts.release()
         super.onCleared()
     }
 }

@@ -1,9 +1,6 @@
 package dev.beyonddev.beyondlingo.data.asr
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.util.Log
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
@@ -35,8 +32,9 @@ class TtsEngine(private val context: Context) {
         Thread(r, "tts-playback").apply { priority = Thread.NORM_PRIORITY - 1 }
     }
 
-    @Volatile
-    private var playing = false
+    /** 播放走共用的 TtsPlayer（PCM / MP3 / stop 三路一致） */
+    private val player = TtsPlayer(context.cacheDir)
+
     private val stopped = AtomicBoolean(false)
 
     // 外部模型路径
@@ -97,71 +95,36 @@ class TtsEngine(private val context: Context) {
         val engine = tts ?: return
         if (text.isBlank()) return
         stopped.set(false)
+        player.reset()
         executor.execute {
             if (stopped.get()) return@execute
             try {
                 val audio = engine.generate(text, speakerId, speed)
                 if (audio.samples.isEmpty()) return@execute
-                playPcm(audio.samples, audio.sampleRate)
+                player.playPcm(audio.samples, audio.sampleRate)
             } catch (t: Throwable) {
                 Log.w(TAG, "speak failed: ${t.message}")
             }
         }
     }
 
-    private fun playPcm(samples: FloatArray, sampleRate: Int) {
-        val pcm = ShortArray(samples.size) { i ->
-            (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-        }
-        val minBuf = AudioTrack.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        ).coerceAtLeast(pcm.size * 2)
-
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(minBuf)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-
-        try {
-            playing = true
-            track.write(pcm, 0, pcm.size)
-            track.play()
-            // 粗略等待播放完成（MODE_STATIC 下按总时长）
-            val ms = (pcm.size * 1000L / sampleRate)
-            Thread.sleep(ms.coerceAtMost(30_000))
-        } catch (t: Throwable) {
-            Log.w(TAG, "play failed: ${t.message}")
-        } finally {
-            playing = false
-            runCatching { track.stop() }
-            runCatching { track.release() }
-        }
-    }
-
     /** 停止当前朗读 */
     fun stopSpeaking() {
         stopped.set(true)
+        player.stop()
     }
 
     fun release() {
         stopped.set(true)
+        player.stop()
         try { tts?.release() } catch (_: Throwable) {}
         tts = null
+    }
+
+    /** 彻底释放（含播放线程）；只在 ViewModel 销毁时调用，勿在换模型时调用 */
+    fun shutdown() {
+        release()
+        executor.shutdown()
     }
 
     /** 从目录约定推断文件名（多用于本地调试） */

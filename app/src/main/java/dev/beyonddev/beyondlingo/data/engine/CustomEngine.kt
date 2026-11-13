@@ -260,7 +260,9 @@ object CustomEnginePresets {
         EnginePreset(
             name = "Groq",
             baseUrl = "https://api.groq.com/openai/v1",
-            defaultModel = "llama-3.3-70b-versatile",
+            // llama-3.3-70b-versatile 已于 2026-08-16 对免费/开发者层下线（仅企业版），
+            // 用它会报 404；改用 Groq 当前的生产模型
+            defaultModel = "openai/gpt-oss-120b",
             note = "速度极快，需海外网络",
         ),
         EnginePreset(

@@ -364,8 +364,8 @@ beyondlingo/
 ## 七、Git 状态
 
 ```
-分支：main（v1.4.0 已提交，待推送）
-Tag ：v1.3.0（已推送，Release 已发布）· v1.4.0（待打）
+分支：main（已推送，与 origin/main 同步）
+Tag ：v1.3.0（已发布）· v1.4.0（已推送，Release 已发布）
 提交：见下方历史
 ```
 
@@ -385,7 +385,15 @@ Tag ：v1.3.0（已推送，Release 已发布）· v1.4.0（待打）
 9460c7e release: 1.3.0 —— 更换签名密钥（versionCode 4）
 fe81f3d docs: README 拆分为英文摘要 + 中文详细
 c60bc88 feat: 1.4.0 —— 同传、视频/文档翻译、模型自带托管  48 files, +5101 -2
+514789a docs: 同步 1.4.0 到 HANDOVER / PROJECT，Brand.VERSION 对齐
+d27c795 build: 补 1.4.0 新依赖的 ProGuard 保留规则
 ```
+
+> **v1.4.0 发布物**（2026-11-12）：
+> https://github.com/2026wpcr-sys/beyondlingo/releases/tag/v1.4.0
+> - `BeyondLingo-AI-1.4.0.apk` — 163,515,484 B，SHA-256
+>   `cc0a6990a5bca96bf212356296e1a0616aa2e12de7d1cc12a8703150a45fcdb9`
+> - 已在该 release 上传 `.sha256` 校验文件
 
 > 说明：仓库的 git 历史从 `c0afa1b`（首次公开前的交接文档提交）开始，
 > 更早的 `stranslate-android` 本地开发历史没有推送过。

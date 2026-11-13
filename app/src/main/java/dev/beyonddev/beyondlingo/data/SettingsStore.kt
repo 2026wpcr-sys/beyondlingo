@@ -75,6 +75,10 @@ data class AppSettings(
     val cloudAsrApiKey: String = "",
     /** 云端 ASR 模型 id，默认 whisper-large-v3 */
     val cloudAsrModel: String = "whisper-large-v3",
+    /** Azure TTS API Key；空 = 未配置，朗读走本地 Matcha */
+    val azureTtsKey: String = "",
+    /** Azure TTS 区域（如 eastus / westus2），须与 Key 所在资源匹配 */
+    val azureTtsRegion: String = "eastus",
 ) {
     fun configFor(engineId: String): EngineConfig =
         engineConfigs[engineId] ?: EngineConfig.EMPTY
@@ -110,6 +114,10 @@ class SettingsStore(private val context: Context) {
             cloudAsrModel = prefs[KEY_CLOUD_ASR_MODEL]
                 ?.takeIf { it.isNotBlank() }
                 ?: dev.beyonddev.beyondlingo.data.asr.CloudAsrEngine.DEFAULT_MODEL,
+            azureTtsKey = prefs[KEY_AZURE_TTS_KEY].orEmpty(),
+            azureTtsRegion = prefs[KEY_AZURE_TTS_REGION]
+                ?.takeIf { it.isNotBlank() }
+                ?: "eastus",
         )
     }
 
@@ -149,6 +157,11 @@ class SettingsStore(private val context: Context) {
     suspend fun setCloudAsrApiKey(key: String) = edit { it[KEY_CLOUD_ASR_KEY] = key }
 
     suspend fun setCloudAsrModel(model: String) = edit { it[KEY_CLOUD_ASR_MODEL] = model }
+
+    suspend fun setAzureTts(key: String, region: String) = edit {
+        it[KEY_AZURE_TTS_KEY] = key
+        it[KEY_AZURE_TTS_REGION] = region
+    }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)
@@ -215,5 +228,11 @@ class SettingsStore(private val context: Context) {
 
         /** 云端 ASR 模型 id */
         val KEY_CLOUD_ASR_MODEL = stringPreferencesKey("cloud_asr_model")
+
+        /** Azure TTS API Key */
+        val KEY_AZURE_TTS_KEY = stringPreferencesKey("azure_tts_key")
+
+        /** Azure TTS 区域 */
+        val KEY_AZURE_TTS_REGION = stringPreferencesKey("azure_tts_region")
     }
 }

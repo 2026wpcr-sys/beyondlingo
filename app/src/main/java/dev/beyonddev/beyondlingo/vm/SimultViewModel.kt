@@ -101,15 +101,55 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
     /** custom 引擎 id（Groq 翻译走它，配 Groq baseUrl/model） */
     private val CUSTOM_ENGINE_ID = "custom"
 
-    init {
-        viewModelScope.launch {
-            settingsStore.settings.collect { s -> selectedAsrModelId = s.asrModelId }
-        }
-    }
     private val repo = TranslateRepository(app)
     private val engine = AsrEngine(app)
     private val punctuation = PunctuationEngine(app)
     private val tts = TtsEngine(app)
+
+    /**
+     * Azure TTS（神经语音）—— 配置了 Key 时朗读走它，音质对齐翻译鸥；
+     * 未配置时回退本地 Matcha 模型。
+     */
+    private val azureTts = dev.beyonddev.beyondlingo.data.asr.AzureTtsEngine()
+
+    /** Azure TTS 是否已配置（决定朗读走云端还是本地） */
+    @Volatile private var azureTtsReady: Boolean = false
+
+    /** 按语言朗读：Azure 已配置走云端神经语音，否则本地 Matcha */
+    private fun speakOut(text: String, langCode: String) {
+        if (!ttsEnabled) return
+        if (azureTtsReady) {
+            azureTts.speak(text, langCode)
+        } else {
+            tts.speak(text)
+        }
+    }
+
+    /** 中文语言标签（简体中文/西班牙语…）→ ISO-639-1 码 */
+    private fun langToWhisper(label: String): String = when (label) {
+        "简体中文" -> "zh"
+        "繁體中文", "繁体中文" -> "zh"
+        "西班牙语" -> "es"
+        "英语" -> "en"
+        "日语" -> "ja"
+        "韩语" -> "ko"
+        "法语" -> "fr"
+        "德语" -> "de"
+        "俄语" -> "ru"
+        else -> "en"
+    }
+
+    init {
+        viewModelScope.launch {
+            settingsStore.settings.collect { s ->
+                selectedAsrModelId = s.asrModelId
+                azureTtsReady = s.azureTtsKey.isNotBlank()
+                if (azureTtsReady) {
+                    azureTts.configure(s.azureTtsKey, s.azureTtsRegion)
+                }
+            }
+        }
+    }
     private val whisper = WhisperEngine(app)
     private val resolver = BidirectionalResolver()
     private var bidiSession: BidirectionalSession? = null
@@ -354,10 +394,14 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             is BidirectionalSession.Event.Translated -> {
+                var ttsLang = ""
                 _state.update { st ->
                     st.copy(
                         lines = st.lines.map {
                             if (it.segmentId == ev.segmentId) {
+                                // 记下这条的方向终点语种，供朗读选音色
+                                ttsLang = it.directionLabel
+                                    .substringAfter("→").trim()
                                 it.copy(
                                     translated = ev.text,
                                     translating = false,
@@ -368,7 +412,11 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 publishToOverlay()
-                if (ttsEnabled && !ev.failed) ev.text?.let { tts.speak(it) }
+                if (ttsEnabled && !ev.failed) {
+                    ev.text?.let { text ->
+                        speakOut(text, langToWhisper(ttsLang))
+                    }
+                }
             }
 
             is BidirectionalSession.Event.Error ->
@@ -554,7 +602,8 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
 
             // 朗读译文（仅成功且用户开启）
             if (ttsEnabled && !failed) {
-                tts.speak(text)
+                val langCode = targetLang.code.substringBefore('-').lowercase()
+                speakOut(text, langCode)
             }
         }
     }

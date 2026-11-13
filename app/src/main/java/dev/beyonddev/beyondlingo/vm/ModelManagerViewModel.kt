@@ -36,6 +36,10 @@ data class ModelUiState(
     val selectedAsrId: String = "",
     /** 云端 ASR（Groq）API Key */
     val cloudAsrKey: String = "",
+    /** Azure TTS API Key（神经语音朗读） */
+    val azureTtsKey: String = "",
+    /** Azure TTS 区域 */
+    val azureTtsRegion: String = "eastus",
 )
 
 /**
@@ -70,6 +74,14 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 保存 Azure TTS 配置（神经语音朗读） */
+    fun setAzureTts(key: String, region: String) {
+        _state.update { it.copy(azureTtsKey = key, azureTtsRegion = region) }
+        viewModelScope.launch {
+            runCatching { settingsStore.setAzureTts(key.trim(), region.trim()) }
+        }
+    }
+
     private val _state = MutableStateFlow(ModelUiState())
     val state: StateFlow<ModelUiState> = _state.asStateFlow()
 
@@ -77,13 +89,15 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
         // 读一次用户选定的模型，用于在列表里标「使用中」。
         // 必须放在 _state 之后：Kotlin 按声明顺序初始化，init 里提前访问会拿到 null。
         viewModelScope.launch {
-            val id = runCatching {
-                settingsStore.settings.first().asrModelId
-            }.getOrNull().orEmpty()
-            val key = runCatching {
-                settingsStore.settings.first().cloudAsrApiKey
-            }.getOrNull().orEmpty()
-            _state.update { it.copy(selectedAsrId = id, cloudAsrKey = key) }
+            val s = runCatching { settingsStore.settings.first() }.getOrNull()
+            _state.update {
+                it.copy(
+                    selectedAsrId = s?.asrModelId.orEmpty(),
+                    cloudAsrKey = s?.cloudAsrApiKey.orEmpty(),
+                    azureTtsKey = s?.azureTtsKey.orEmpty(),
+                    azureTtsRegion = s?.azureTtsRegion.orEmpty().ifBlank { "eastus" },
+                )
+            }
         }
     }
 

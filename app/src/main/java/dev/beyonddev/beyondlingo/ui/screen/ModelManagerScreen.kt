@@ -98,6 +98,37 @@ fun ModelManagerScreen(
 
             Spacer(Modifier.height(16.dp))
 
+            // ---- 朗读（TTS）配置：Azure 神经语音 ----
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("朗读语音（Azure 神经语音）", fontSize = 16.sp)
+                    Text(
+                        "填入后朗读走 Azure 云端，音质接近真人（翻译鸥同款方案）。" +
+                            "免费额度每月 50 万字符。留空则用本地语音。",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.azureTtsKey,
+                        onValueChange = { viewModel.setAzureTts(it, state.azureTtsRegion) },
+                        label = { Text("Azure Speech Key") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = state.azureTtsRegion,
+                        onValueChange = { viewModel.setAzureTts(state.azureTtsKey, it) },
+                        label = { Text("区域（如 eastus / westus2 / westeurope）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(state.entries, key = { it.id }) { entry ->
                     Card(modifier = Modifier.fillMaxWidth()) {

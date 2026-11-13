@@ -64,7 +64,7 @@ object Brand {
     const val APP_NAME_EN = "BeyondLingo AI"
 
     /** 版本号 */
-    const val VERSION = "1.5.3"
+    const val VERSION = "1.5.4"
 
     /** 中文署名 */
     const val AUTHOR_ZH = "无界者"

@@ -107,19 +107,16 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
     private val tts = TtsEngine(app)
 
     /**
-     * Azure TTS（神经语音）—— 配置了 Key 时朗读走它，音质对齐翻译鸥；
-     * 未配置时回退本地 Matcha 模型。
+     * 云端 TTS —— 可切换服务商（Azure / OpenAI 兼容 / 本地）。
+     * 配置了就云端朗读，否则回退本地 Matcha。
      */
-    private val azureTts = dev.beyonddev.beyondlingo.data.asr.AzureTtsEngine()
+    private val cloudTts = dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine()
 
-    /** Azure TTS 是否已配置（决定朗读走云端还是本地） */
-    @Volatile private var azureTtsReady: Boolean = false
-
-    /** 按语言朗读：Azure 已配置走云端神经语音，否则本地 Matcha */
+    /** 按语言朗读：云端 TTS 可用则走云端，否则本地 Matcha */
     private fun speakOut(text: String, langCode: String) {
         if (!ttsEnabled) return
-        if (azureTtsReady) {
-            azureTts.speak(text, langCode)
+        if (cloudTts.isReady) {
+            cloudTts.speak(text, langCode)
         } else {
             tts.speak(text)
         }
@@ -143,10 +140,25 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             settingsStore.settings.collect { s ->
                 selectedAsrModelId = s.asrModelId
-                azureTtsReady = s.azureTtsKey.isNotBlank()
-                if (azureTtsReady) {
-                    azureTts.configure(s.azureTtsKey, s.azureTtsRegion)
-                }
+                // 云端 TTS 配置：provider 决定走哪套协议
+                val provider = dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine.Provider
+                    .from(s.ttsProvider)
+                cloudTts.configure(
+                    dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine.Config(
+                        provider = provider,
+                        apiKey = if (s.ttsApiKey.isNotBlank()) s.ttsApiKey else s.azureTtsKey,
+                        endpoint = when (provider) {
+                            dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine.Provider.AZURE ->
+                                s.azureTtsRegion.ifBlank { "eastus" }
+                            dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine.Provider.OPENAI ->
+                                s.ttsBaseUrl
+                            else -> ""
+                        },
+                        path = s.ttsPath,
+                        model = s.ttsModel,
+                        voice = s.ttsVoice,
+                    )
+                )
             }
         }
     }

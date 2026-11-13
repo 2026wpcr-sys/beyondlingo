@@ -79,6 +79,18 @@ data class AppSettings(
     val azureTtsKey: String = "",
     /** Azure TTS 区域（如 eastus / westus2），须与 Key 所在资源匹配 */
     val azureTtsRegion: String = "eastus",
+    /** 云端 TTS 服务商：local / azure / openai */
+    val ttsProvider: String = "local",
+    /** OpenAI 兼容 TTS：baseUrl */
+    val ttsBaseUrl: String = "",
+    /** OpenAI 兼容 TTS：请求路径 */
+    val ttsPath: String = "/audio/speech",
+    /** OpenAI 兼容 TTS：模型名 */
+    val ttsModel: String = "tts-1",
+    /** OpenAI 兼容 TTS：音色 */
+    val ttsVoice: String = "alloy",
+    /** 云端 TTS 的 Key（azure 与 openai 共用这一栏） */
+    val ttsApiKey: String = "",
 ) {
     fun configFor(engineId: String): EngineConfig =
         engineConfigs[engineId] ?: EngineConfig.EMPTY
@@ -118,6 +130,12 @@ class SettingsStore(private val context: Context) {
             azureTtsRegion = prefs[KEY_AZURE_TTS_REGION]
                 ?.takeIf { it.isNotBlank() }
                 ?: "eastus",
+            ttsProvider = prefs[KEY_TTS_PROVIDER] ?: "local",
+            ttsBaseUrl = prefs[KEY_TTS_BASE_URL].orEmpty(),
+            ttsPath = prefs[KEY_TTS_PATH] ?: "/audio/speech",
+            ttsModel = prefs[KEY_TTS_MODEL] ?: "tts-1",
+            ttsVoice = prefs[KEY_TTS_VOICE] ?: "alloy",
+            ttsApiKey = prefs[KEY_TTS_API_KEY].orEmpty(),
         )
     }
 
@@ -161,6 +179,23 @@ class SettingsStore(private val context: Context) {
     suspend fun setAzureTts(key: String, region: String) = edit {
         it[KEY_AZURE_TTS_KEY] = key
         it[KEY_AZURE_TTS_REGION] = region
+    }
+
+    /** 通用云端 TTS 配置 */
+    suspend fun setCloudTts(
+        provider: String,
+        apiKey: String,
+        baseUrl: String,
+        path: String,
+        model: String,
+        voice: String,
+    ) = edit {
+        it[KEY_TTS_PROVIDER] = provider
+        it[KEY_TTS_API_KEY] = apiKey
+        it[KEY_TTS_BASE_URL] = baseUrl
+        it[KEY_TTS_PATH] = path
+        it[KEY_TTS_MODEL] = model
+        it[KEY_TTS_VOICE] = voice
     }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
@@ -234,5 +269,12 @@ class SettingsStore(private val context: Context) {
 
         /** Azure TTS 区域 */
         val KEY_AZURE_TTS_REGION = stringPreferencesKey("azure_tts_region")
+
+        val KEY_TTS_PROVIDER = stringPreferencesKey("tts_provider")
+        val KEY_TTS_BASE_URL = stringPreferencesKey("tts_base_url")
+        val KEY_TTS_PATH = stringPreferencesKey("tts_path")
+        val KEY_TTS_MODEL = stringPreferencesKey("tts_model")
+        val KEY_TTS_VOICE = stringPreferencesKey("tts_voice")
+        val KEY_TTS_API_KEY = stringPreferencesKey("tts_api_key")
     }
 }

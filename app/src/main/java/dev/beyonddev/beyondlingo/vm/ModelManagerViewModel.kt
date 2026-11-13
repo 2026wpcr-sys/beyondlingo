@@ -40,6 +40,20 @@ data class ModelUiState(
     val azureTtsKey: String = "",
     /** Azure TTS 区域 */
     val azureTtsRegion: String = "eastus",
+    /** 云端 TTS 服务商：local / azure / openai */
+    val ttsProvider: String = "local",
+    val ttsBaseUrl: String = "",
+    val ttsPath: String = "/audio/speech",
+    val ttsModel: String = "tts-1",
+    val ttsVoice: String = "alloy",
+    val ttsApiKey: String = "",
+    /**
+     * ASR 卡片当前展开的分支：local / cloud。
+     *
+     * 必须与「已选模型」分开：点「本地」只是切视图，不能因为本地模型还没下载
+     * 就拒绝（真机 bug：从云端点回本地毫无反应）。
+     */
+    val asrTab: String = "local",
 )
 
 /**
@@ -82,6 +96,44 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 保存通用云端 TTS 配置（provider + OpenAI 兼容字段） */
+    fun setCloudTts(
+        provider: String = _state.value.ttsProvider,
+        apiKey: String = _state.value.ttsApiKey,
+        baseUrl: String = _state.value.ttsBaseUrl,
+        path: String = _state.value.ttsPath,
+        model: String = _state.value.ttsModel,
+        voice: String = _state.value.ttsVoice,
+    ) {
+        _state.update {
+            it.copy(
+                ttsProvider = provider,
+                ttsApiKey = apiKey,
+                ttsBaseUrl = baseUrl,
+                ttsPath = path,
+                ttsModel = model,
+                ttsVoice = voice,
+            )
+        }
+        viewModelScope.launch {
+            runCatching {
+                settingsStore.setCloudTts(
+                    provider = provider,
+                    apiKey = apiKey.trim(),
+                    baseUrl = baseUrl.trim(),
+                    path = path.trim(),
+                    model = model.trim(),
+                    voice = voice.trim(),
+                )
+            }
+        }
+    }
+
+    /** 切换 ASR 卡片分支（仅视图状态，不改已选模型） */
+    fun setAsrTab(tab: String) {
+        _state.update { it.copy(asrTab = tab) }
+    }
+
     private val _state = MutableStateFlow(ModelUiState())
     val state: StateFlow<ModelUiState> = _state.asStateFlow()
 
@@ -96,9 +148,20 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
                     cloudAsrKey = s?.cloudAsrApiKey.orEmpty(),
                     azureTtsKey = s?.azureTtsKey.orEmpty(),
                     azureTtsRegion = s?.azureTtsRegion.orEmpty().ifBlank { "eastus" },
+                    ttsProvider = s?.ttsProvider ?: "local",
+                    ttsBaseUrl = s?.ttsBaseUrl.orEmpty(),
+                    ttsPath = s?.ttsPath ?: "/audio/speech",
+                    ttsModel = s?.ttsModel ?: "tts-1",
+                    ttsVoice = s?.ttsVoice ?: "alloy",
+                    ttsApiKey = s?.ttsApiKey.orEmpty(),
+                    // 已选云端就展开云端分支，否则本地
+                    asrTab = if (s?.asrModelId?.startsWith("groq") == true) "cloud" else "local",
                 )
             }
         }
+        // 首次进页面就加载清单：否则 entries 为空，卡片里一个模型芯片都渲染不出来
+        // （真机踩过：重装后模型页只剩服务商按钮，看不到 base/small）。
+        loadManifest()
     }
 
     fun setManifestUrl(url: String) {

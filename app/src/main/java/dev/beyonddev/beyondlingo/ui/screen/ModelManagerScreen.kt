@@ -64,144 +64,303 @@ fun ModelManagerScreen(
                 .padding(padding)
                 .padding(horizontal = 20.dp),
         ) {
-            Text(
-                text = "云端档精度最高但音频会上传；本地档不出设备。按需选择，" +
-                    "下载/填好 Key 后点「设为当前」切换。",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Spacer(Modifier.height(12.dp))
 
-            Spacer(Modifier.height(16.dp))
-
-            OutlinedTextField(
-                value = state.manifestUrl,
-                onValueChange = viewModel::setManifestUrl,
-                label = { Text("manifest.json 地址") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            Button(
-                onClick = viewModel::loadManifest,
-                enabled = !state.loading,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (state.loading) "加载中…" else "拉取模型列表")
-            }
-
+            // 清单在 ViewModel init 里自动加载，页面上不再暴露地址输入和拉取按钮。
             state.message?.let {
-                Spacer(Modifier.height(8.dp))
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(8.dp))
             }
 
-            Spacer(Modifier.height(16.dp))
-
-            // ---- 朗读（TTS）配置：Azure 神经语音 ----
+            // ---- 朗读（TTS）配置 ----
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("朗读语音（Azure 神经语音）", fontSize = 16.sp)
+                    Text("朗读语音（TTS）", fontSize = 16.sp)
                     Text(
-                        "填入后朗读走 Azure 云端，音质接近真人（翻译鸥同款方案）。" +
-                            "免费额度每月 50 万字符。留空则用本地语音。",
+                        "选「本地」不花钱、离线；选云端音质接近真人。",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = state.azureTtsKey,
-                        onValueChange = { viewModel.setAzureTts(it, state.azureTtsRegion) },
-                        label = { Text("Azure Speech Key") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = state.azureTtsRegion,
-                        onValueChange = { viewModel.setAzureTts(state.azureTtsKey, it) },
-                        label = { Text("区域（如 eastus / westus2 / westeurope）") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+
+                    // 服务商选择
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "local" to "本地",
+                            "azure" to "Azure",
+                            "openai" to "OpenAI兼容",
+                        ).forEach { (id, label) ->
+                            val active = state.ttsProvider == id
+                            TextButton(
+                                onClick = { viewModel.setCloudTts(provider = id) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            ) {
+                                Text(
+                                    label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (active) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    when (state.ttsProvider) {
+                        "azure" -> {
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = state.azureTtsKey,
+                                onValueChange = { viewModel.setAzureTts(it, state.azureTtsRegion) },
+                                label = { Text("Azure Speech Key") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = state.azureTtsRegion,
+                                onValueChange = { viewModel.setAzureTts(state.azureTtsKey, it) },
+                                label = { Text("区域（如 eastus / southcentralus）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+
+                        "openai" -> {
+                            Spacer(Modifier.height(6.dp))
+                            // 常用服务一键填充
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                dev.beyonddev.beyondlingo.data.asr.CloudTtsEngine.Presets.all
+                                    .forEach { p ->
+                                        TextButton(
+                                            onClick = {
+                                                viewModel.setCloudTts(
+                                                    baseUrl = p.baseUrl,
+                                                    path = p.path,
+                                                    model = p.model,
+                                                    voice = p.voice,
+                                                )
+                                            },
+                                            contentPadding = PaddingValues(
+                                                horizontal = 10.dp, vertical = 0.dp
+                                            ),
+                                        ) { Text(p.name, fontSize = 13.sp) }
+                                    }
+                            }
+                            OutlinedTextField(
+                                value = state.ttsBaseUrl,
+                                onValueChange = { viewModel.setCloudTts(baseUrl = it) },
+                                label = { Text("Base URL（如 https://api.siliconflow.cn/v1）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = state.ttsApiKey,
+                                onValueChange = { viewModel.setCloudTts(apiKey = it) },
+                                label = { Text("API Key") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = state.ttsModel,
+                                onValueChange = { viewModel.setCloudTts(model = it) },
+                                label = { Text("模型（如 tts-1）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = state.ttsVoice,
+                                onValueChange = { viewModel.setCloudTts(voice = it) },
+                                label = { Text("音色（如 alloy / nova）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = state.ttsPath,
+                                onValueChange = { viewModel.setCloudTts(path = it) },
+                                label = { Text("路径（默认 /audio/speech）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "任何兼容 OpenAI /audio/speech 的服务都可用（OpenAI、硅基流动等）。" +
+                                    "需返回 wav 格式。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        else -> {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "使用本地语音，无需配置。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(state.entries, key = { it.id }) { entry ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(entry.name, fontSize = 16.sp)
-                            Text(
-                                "${entry.kind} · ${entry.files.size} 个文件",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            val ready = state.ready[entry.id] == true
-                            val prog = state.progress[entry.id]
-                            val isCloud = entry.kind == "asr-cloud"
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val isActive = when {
-                                    !ready -> false
-                                    isCloud -> state.selectedAsrId == entry.id
-                                    else -> state.selectedAsrId == entry.id ||
-                                        (state.selectedAsrId.isEmpty() &&
-                                            entry.id == "whisper-base-int8")
-                                }
-                                when {
-                                    prog != null -> Text(prog, fontSize = 13.sp)
-                                    ready -> {
-                                        if (!isCloud) {
-                                            Text(
-                                                "已就绪",
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                            Spacer(Modifier.width(12.dp))
-                                        }
-                                        if (isActive) {
-                                            Text(
-                                                "使用中",
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                        } else {
-                                            TextButton(
-                                                onClick = { viewModel.selectAsrModel(entry) },
-                                                contentPadding = PaddingValues(
-                                                    horizontal = 8.dp, vertical = 0.dp
-                                                ),
-                                            ) { Text("设为当前", fontSize = 13.sp) }
-                                        }
-                                    }
-                                    else -> TextButton(onClick = { viewModel.download(entry) }) {
-                                        Text("下载")
-                                    }
-                                }
-                            }
+            // ---- 语音识别（ASR）配置：与 TTS 一致的固定卡片 ----
+            val localEntries = state.entries.filter { it.kind == "asr-offline" }
+            val cloudEntry = state.entries.firstOrNull { it.kind == "asr-cloud" }
+            // 分支由 asrTab 决定（纯视图状态），与「已选模型」解耦：
+            // 否则本地模型没下载时点「本地」会被 selectAsrModel 的 ready 检查拒绝，
+            // 表现为「点本地没反应」。
+            val cloudSelected = state.asrTab == "cloud"
 
-                            // 云端档：填 API Key；并明确告知音频会上传
-                            if (isCloud) {
-                                Spacer(Modifier.height(8.dp))
-                                OutlinedTextField(
-                                    value = state.cloudAsrKey,
-                                    onValueChange = viewModel::setCloudAsrKey,
-                                    label = { Text("Groq API Key") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    "⚠ 选此档时音频会上传到 Groq 服务器识别，" +
-                                        "不再只在设备本地处理。需要联网。",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("语音识别（ASR）", fontSize = 16.sp)
+                    Text(
+                        "本地不出设备、可离线；云端精度最高，但音频会上传。",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    // 服务商：本地 / Groq 云端
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val localActive = !cloudSelected
+                        TextButton(
+                            onClick = {
+                                // 只切视图；真正选中由下面的模型芯片负责
+                                viewModel.setAsrTab("local")
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                "本地",
+                                fontSize = 13.sp,
+                                fontWeight = if (localActive) FontWeight.Bold else FontWeight.Normal,
+                                color = if (localActive) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                viewModel.setAsrTab("cloud")
+                                // 云端档无文件可下，直接选中（没填 Key 时启动会明确报错）
+                                cloudEntry?.let { viewModel.selectAsrModel(it) }
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                "Groq 云端",
+                                fontSize = 13.sp,
+                                fontWeight = if (cloudSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (cloudSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
+
+                    if (cloudSelected) {
+                        // ---- 云端：Key + 模型档 ----
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = state.cloudAsrKey,
+                            onValueChange = viewModel::setCloudAsrKey,
+                            label = { Text("Groq API Key") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "⚠ 音频会上传到 Groq 服务器识别，不再只在设备本地处理。需要联网。",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "模型：whisper-large-v3（最准，WER 10.3%）",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        // ---- 本地：两档模型芯片 ----
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            localEntries.forEach { entry ->
+                                val ready = state.ready[entry.id] == true
+                                val prog = state.progress[entry.id]
+                                val active = state.selectedAsrId == entry.id ||
+                                    (state.selectedAsrId.isEmpty() &&
+                                        entry.id == "whisper-base-int8")
+                                val shortName = when (entry.id) {
+                                    "whisper-base-int8" -> "base 均衡"
+                                    "whisper-small-int8" -> "small 高精度"
+                                    else -> entry.name
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (ready) {
+                                            viewModel.selectAsrModel(entry)
+                                        } else if (prog == null) {
+                                            viewModel.download(entry)
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(
+                                        horizontal = 10.dp, vertical = 0.dp
+                                    ),
+                                ) {
+                                    Text(
+                                        if (ready) shortName else "$shortName · 下载",
+                                        fontSize = 13.sp,
+                                        fontWeight = if (active) {
+                                            FontWeight.Bold
+                                        } else {
+                                            FontWeight.Normal
+                                        },
+                                        color = when {
+                                            prog != null -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            active -> MaterialTheme.colorScheme.primary
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    )
+                                }
                             }
+                        }
+                        // 状态行：进度 / 已就绪 / 使用中
+                        val cur = localEntries.firstOrNull {
+                            state.selectedAsrId == it.id ||
+                                (state.selectedAsrId.isEmpty() &&
+                                    it.id == "whisper-base-int8")
+                        } ?: localEntries.firstOrNull()
+                        if (cur != null) {
+                            val prog = state.progress[cur.id]
+                            val ready = state.ready[cur.id] == true
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                when {
+                                    prog != null -> prog
+                                    ready -> "已就绪 · 使用中"
+                                    else -> "未下载，点上方模型开始下载"
+                                },
+                                fontSize = 11.sp,
+                                color = if (ready) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
                         }
                     }
                 }

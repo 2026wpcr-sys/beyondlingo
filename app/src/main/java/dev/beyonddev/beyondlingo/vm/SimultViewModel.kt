@@ -92,6 +92,12 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
      */
     @Volatile private var selectedAsrModelId: String = ""
 
+    /** 选中的是否云端档（kind=asr-cloud），由 refreshExternalModel 更新 */
+    @Volatile private var selectedAsrIsCloud: Boolean = false
+
+    /** 云端 ASR（Groq）引擎实例 */
+    private val cloudAsr = dev.beyonddev.beyondlingo.data.asr.CloudAsrEngine()
+
     init {
         viewModelScope.launch {
             settingsStore.settings.collect { s -> selectedAsrModelId = s.asrModelId }
@@ -226,21 +232,27 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) { whisper.initialize() }
-            if (!ok) {
-                _state.update {
-                    it.copy(
-                        loading = false,
-                        error = "多语种语音模型未就绪。请在「模型」页下载 Whisper 模型，" +
-                            "再回到这里启动。",
-                    )
+            // 云端档不依赖本地模型；只有走本地时才强制初始化 Whisper
+            if (!selectedAsrIsCloud) {
+                val ok = withContext(Dispatchers.IO) { whisper.initialize() }
+                if (!ok) {
+                    _state.update {
+                        it.copy(
+                            loading = false,
+                            error = "多语种语音模型未就绪。请在「模型」页下载 Whisper 模型，" +
+                                "或改选「Groq 云端」档（需填 API Key），再回到这里启动。",
+                        )
+                    }
+                    return@launch
                 }
-                return@launch
             }
 
             val s = settingsStore.settings.first()
             engineId = EngineRegistry.DEFAULT_ENGINE_ID
             engineConfig = s.configFor(engineId)
+
+            // 选中的是云端档（kind=asr-cloud）才启用 Groq；否则纯本地
+            val selectedIsCloud = selectedAsrIsCloud
 
             val session = BidirectionalSession(
                 context = getApplication(),
@@ -252,6 +264,9 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
                 scope = viewModelScope,
                 onEvent = { ev -> handleBidiEvent(ev) },
                 forcedSpeakSide = speakSide,
+                cloudAsr = if (selectedIsCloud) cloudAsr else null,
+                cloudApiKey = if (selectedIsCloud) s.cloudAsrApiKey else "",
+                cloudModel = s.cloudAsrModel,
             )
             bidiSession = session
             session.start()
@@ -427,6 +442,9 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
         // 多语种（Whisper）—— 对话翻译用，只有 encoder/decoder/tokens 三件套。
         // 优先用用户在「模型」页选定的那一档；未选或未就绪则退回第一个就绪的。
         val selectedId = selectedAsrModelId
+        selectedAsrIsCloud = manifest?.models?.any {
+            it.id == selectedId && it.kind == "asr-cloud"
+        } == true
         val offlineReady = manifest?.models?.filter {
             it.kind == "asr-offline" && downloader.isReady(it)
         }.orEmpty()

@@ -42,4 +42,55 @@ object WavUtil {
         }
         return out
     }
+
+    /**
+     * FloatArray（[-1,1]）→ 16bit 单声道 WAV 字节。
+     *
+     * 云端 ASR（Groq）要求上传音频文件；Groq 会自己降采样到 16kHz mono，
+     * 所以这里直接输出 16k/mono/PCM16，不额外转码，省掉 ffmpeg 依赖。
+     */
+    fun encode16kMono(samples: FloatArray, sampleRate: Int = 16000): ByteArray {
+        val dataLen = samples.size * 2
+        val out = ByteArray(44 + dataLen)
+
+        fun putInt(off: Int, v: Int) {
+            out[off] = (v and 0xFF).toByte()
+            out[off + 1] = ((v shr 8) and 0xFF).toByte()
+            out[off + 2] = ((v shr 16) and 0xFF).toByte()
+            out[off + 3] = ((v shr 24) and 0xFF).toByte()
+        }
+        fun putShort(off: Int, v: Int) {
+            out[off] = (v and 0xFF).toByte()
+            out[off + 1] = ((v shr 8) and 0xFF).toByte()
+        }
+
+        // RIFF header
+        out[0] = 'R'.code.toByte(); out[1] = 'I'.code.toByte()
+        out[2] = 'F'.code.toByte(); out[3] = 'F'.code.toByte()
+        putInt(4, 36 + dataLen)              // ChunkSize
+        out[8] = 'W'.code.toByte(); out[9] = 'A'.code.toByte()
+        out[10] = 'V'.code.toByte(); out[11] = 'E'.code.toByte()
+        // fmt chunk
+        out[12] = 'f'.code.toByte(); out[13] = 'm'.code.toByte()
+        out[14] = 't'.code.toByte(); out[15] = ' '.code.toByte()
+        putInt(16, 16)                       // Subchunk1Size
+        putShort(20, 1)                      // AudioFormat = PCM
+        putShort(22, 1)                      // NumChannels = mono
+        putInt(24, sampleRate)
+        putInt(28, sampleRate * 2)           // ByteRate
+        putShort(32, 2)                      // BlockAlign
+        putShort(34, 16)                     // BitsPerSample
+        // data chunk
+        out[36] = 'd'.code.toByte(); out[37] = 'a'.code.toByte()
+        out[38] = 't'.code.toByte(); out[39] = 'a'.code.toByte()
+        putInt(40, dataLen)
+
+        var off = 44
+        for (s in samples) {
+            val v = (s.coerceIn(-1f, 1f) * 32767f).toInt()
+            putShort(off, v)
+            off += 2
+        }
+        return out
+    }
 }

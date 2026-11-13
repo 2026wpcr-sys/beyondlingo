@@ -42,6 +42,13 @@ class BidirectionalSession(
      * 这是识别质量最稳的形态。
      */
     private val forcedSpeakSide: BidirectionalResolver.Side? = null,
+    /**
+     * 云端 ASR（Groq）。非 null 且 apiKey 非空时走云端，否则走本地 Whisper。
+     * 云端精度高（whisper-large-v3，WER 10.3%），但音频会上传。
+     */
+    private val cloudAsr: CloudAsrEngine? = null,
+    private val cloudApiKey: String = "",
+    private val cloudModel: String = CloudAsrEngine.DEFAULT_MODEL,
 ) {
 
     private companion object {
@@ -172,13 +179,33 @@ class BidirectionalSession(
 
             val hint = langToWhisperCode(sourceLang)
             val t0 = System.nanoTime()
-            val res = whisper.transcribeFixedLanguage(samples, hint, lastText) ?: return
+
+            // 云端优先：精度显著高于本地 int8（代价是音频上传）
+            val cloudText = if (cloudAsr != null && cloudApiKey.isNotBlank()) {
+                cloudAsr.transcribe(
+                    samples = samples,
+                    language = hint,
+                    prompt = lastText.takeIf { it.isNotBlank() },
+                    apiKey = cloudApiKey,
+                    model = cloudModel,
+                )?.text
+            } else null
+
+            val res = if (cloudText != null) {
+                WhisperEngine.Result(text = cloudText, lang = hint)
+            } else {
+                if (cloudAsr != null && cloudApiKey.isNotBlank()) {
+                    Log.w(TAG, "cloud asr returned null, falling back to local")
+                }
+                whisper.transcribeFixedLanguage(samples, hint, lastText) ?: return
+            }
             val asrMs = (System.nanoTime() - t0) / 1_000_000
             lastText = res.text
 
             val id = segmentId++
             val label = "${sourceLang.labelZh} → ${targetLang.labelZh}"
-            Log.i(TAG, "seg#$id fixed=$hint side=$side asr=${asrMs}ms text='${res.text}'")
+            val via = if (cloudText != null) "cloud" else "local"
+            Log.i(TAG, "seg#$id fixed=$hint via=$via side=$side asr=${asrMs}ms text='${res.text}'")
 
             onEvent(
                 Event.Recognized(

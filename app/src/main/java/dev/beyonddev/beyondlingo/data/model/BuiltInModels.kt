@@ -45,33 +45,14 @@ object BuiltInModels {
   "version": 2,
   "models": [
     {
-      "id": "whisper-tiny-int8",
-      "name": "Whisper tiny int8（极速 · 99MB）",
-      "kind": "asr-offline",
-      "files": [
-        {
-          "key": "encoder",
-          "url": "$HF/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-encoder.int8.onnx",
-          "sha256": "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434",
-          "sizeBytes": 12937772
-        },
-        {
-          "key": "decoder",
-          "url": "$HF/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-decoder.int8.onnx",
-          "sha256": "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925",
-          "sizeBytes": 89855401
-        },
-        {
-          "key": "tokens",
-          "url": "$HF/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-tokens.txt",
-          "sha256": "$TOKENS_SHA",
-          "sizeBytes": $TOKENS_SIZE
-        }
-      ]
+      "id": "groq-whisper-large-v3",
+      "name": "Groq whisper-large-v3（云端 · 最高精度 · 需 API Key）",
+      "kind": "asr-cloud",
+      "files": []
     },
     {
       "id": "whisper-base-int8",
-      "name": "Whisper base int8（均衡 · 153MB · 默认）",
+      "name": "Whisper base int8（本地 · 均衡 · 153MB · 默认）",
       "kind": "asr-offline",
       "files": [
         {
@@ -96,7 +77,7 @@ object BuiltInModels {
     },
     {
       "id": "whisper-small-int8",
-      "name": "Whisper small int8（高精度 · 358MB）",
+      "name": "Whisper small int8（本地 · 高精度 · 358MB）",
       "kind": "asr-offline",
       "files": [
         {
@@ -114,31 +95,6 @@ object BuiltInModels {
         {
           "key": "tokens",
           "url": "$HF/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-tokens.txt",
-          "sha256": "$TOKENS_SHA",
-          "sizeBytes": $TOKENS_SIZE
-        }
-      ]
-    },
-    {
-      "id": "whisper-turbo-int8",
-      "name": "Whisper turbo int8（最高精度 · 989MB · 较慢）",
-      "kind": "asr-offline",
-      "files": [
-        {
-          "key": "encoder",
-          "url": "$HF/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx",
-          "sha256": "b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b",
-          "sizeBytes": 674716297
-        },
-        {
-          "key": "decoder",
-          "url": "$HF/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-decoder.int8.onnx",
-          "sha256": "20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547",
-          "sizeBytes": 361080764
-        },
-        {
-          "key": "tokens",
-          "url": "$HF/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-tokens.txt",
           "sha256": "$TOKENS_SHA",
           "sizeBytes": $TOKENS_SIZE
         }

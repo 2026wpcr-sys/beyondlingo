@@ -34,6 +34,8 @@ data class ModelUiState(
     val usingBuiltIn: Boolean = true,
     /** 用户选定的 ASR 模型 id（空 = 未显式选择） */
     val selectedAsrId: String = "",
+    /** 云端 ASR（Groq）API Key */
+    val cloudAsrKey: String = "",
 )
 
 /**
@@ -52,11 +54,19 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
      * 只改设置，不重新加载 —— 下次进入对话翻译时按新选择初始化。
      */
     fun selectAsrModel(entry: ModelEntry) {
-        if (entry.kind != "asr-offline") return
+        if (entry.kind != "asr-offline" && entry.kind != "asr-cloud") return
         if (_state.value.ready[entry.id] != true) return
         viewModelScope.launch {
             runCatching { settingsStore.setAsrModelId(entry.id) }
             _state.update { it.copy(selectedAsrId = entry.id) }
+        }
+    }
+
+    /** 保存云端 ASR（Groq）的 API Key */
+    fun setCloudAsrKey(key: String) {
+        _state.update { it.copy(cloudAsrKey = key) }
+        viewModelScope.launch {
+            runCatching { settingsStore.setCloudAsrApiKey(key.trim()) }
         }
     }
 
@@ -70,7 +80,10 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
             val id = runCatching {
                 settingsStore.settings.first().asrModelId
             }.getOrNull().orEmpty()
-            _state.update { it.copy(selectedAsrId = id) }
+            val key = runCatching {
+                settingsStore.settings.first().cloudAsrApiKey
+            }.getOrNull().orEmpty()
+            _state.update { it.copy(selectedAsrId = id, cloudAsrKey = key) }
         }
     }
 
@@ -96,7 +109,8 @@ class ModelManagerViewModel(app: Application) : AndroidViewModel(app) {
             result.fold(
                 onSuccess = { manifest ->
                     val ready = manifest.models.associate {
-                        it.id to downloader.isReady(it)
+                        // 云端档没有文件要下载，始终「就绪」；是否可用取决于 API Key
+                        it.id to if (it.kind == "asr-cloud") true else downloader.isReady(it)
                     }
                     val builtIn = url.isEmpty()
                     _state.update {

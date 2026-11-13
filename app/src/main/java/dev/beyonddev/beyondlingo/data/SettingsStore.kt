@@ -71,6 +71,10 @@ data class AppSettings(
     val themeMode: String = "system",
     /** 当前使用的离线 ASR 模型 id；空 = 用内置默认（whisper-base-int8） */
     val asrModelId: String = "",
+    /** 云端 ASR（Groq）API Key；空 = 未配置，云端档不可用 */
+    val cloudAsrApiKey: String = "",
+    /** 云端 ASR 模型 id，默认 whisper-large-v3 */
+    val cloudAsrModel: String = "whisper-large-v3",
 ) {
     fun configFor(engineId: String): EngineConfig =
         engineConfigs[engineId] ?: EngineConfig.EMPTY
@@ -102,6 +106,10 @@ class SettingsStore(private val context: Context) {
             bubbleEnabled = prefs[KEY_BUBBLE] ?: false,
             themeMode = prefs[KEY_THEME] ?: "system",
             asrModelId = prefs[KEY_ASR_MODEL].orEmpty(),
+            cloudAsrApiKey = prefs[KEY_CLOUD_ASR_KEY].orEmpty(),
+            cloudAsrModel = prefs[KEY_CLOUD_ASR_MODEL]
+                ?.takeIf { it.isNotBlank() }
+                ?: dev.beyonddev.beyondlingo.data.asr.CloudAsrEngine.DEFAULT_MODEL,
         )
     }
 
@@ -137,6 +145,10 @@ class SettingsStore(private val context: Context) {
     suspend fun setThemeMode(mode: String) = edit { it[KEY_THEME] = mode }
 
     suspend fun setAsrModelId(id: String) = edit { it[KEY_ASR_MODEL] = id }
+
+    suspend fun setCloudAsrApiKey(key: String) = edit { it[KEY_CLOUD_ASR_KEY] = key }
+
+    suspend fun setCloudAsrModel(model: String) = edit { it[KEY_CLOUD_ASR_MODEL] = model }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)
@@ -197,5 +209,11 @@ class SettingsStore(private val context: Context) {
 
         /** 当前使用的离线 ASR 模型 id（空 = 用内置默认） */
         val KEY_ASR_MODEL = stringPreferencesKey("asr_model_id")
+
+        /** 云端 ASR（Groq）API Key */
+        val KEY_CLOUD_ASR_KEY = stringPreferencesKey("cloud_asr_api_key")
+
+        /** 云端 ASR 模型 id */
+        val KEY_CLOUD_ASR_MODEL = stringPreferencesKey("cloud_asr_model")
     }
 }

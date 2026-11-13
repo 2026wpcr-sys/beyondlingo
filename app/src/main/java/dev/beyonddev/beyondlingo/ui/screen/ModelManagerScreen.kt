@@ -65,9 +65,8 @@ fun ModelManagerScreen(
                 .padding(horizontal = 20.dp),
         ) {
             Text(
-                text = "对话翻译需要先下载一个语音模型。体积越大精度越高，按需选择：" +
-                    "tiny 极速 / base 均衡 / small 高精度 / turbo 最高。" +
-                    "下载后点「设为当前」切换。",
+                text = "云端档精度最高但音频会上传；本地档不出设备。按需选择，" +
+                    "下载/填好 Key 后点「设为当前」切换。",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -110,44 +109,67 @@ fun ModelManagerScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Spacer(Modifier.height(8.dp))
+                            val ready = state.ready[entry.id] == true
+                            val prog = state.progress[entry.id]
+                            val isCloud = entry.kind == "asr-cloud"
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                val ready = state.ready[entry.id] == true
-                                val prog = state.progress[entry.id]
-                                val isActive = ready && entry.kind == "asr-offline" &&
-                                    (state.selectedAsrId == entry.id ||
+                                val isActive = when {
+                                    !ready -> false
+                                    isCloud -> state.selectedAsrId == entry.id
+                                    else -> state.selectedAsrId == entry.id ||
                                         (state.selectedAsrId.isEmpty() &&
-                                            entry.id == "whisper-base-int8"))
+                                            entry.id == "whisper-base-int8")
+                                }
                                 when {
                                     prog != null -> Text(prog, fontSize = 13.sp)
                                     ready -> {
-                                        Text(
-                                            "已就绪",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
-                                        if (entry.kind == "asr-offline") {
+                                        if (!isCloud) {
+                                            Text(
+                                                "已就绪",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
                                             Spacer(Modifier.width(12.dp))
-                                            if (isActive) {
-                                                Text(
-                                                    "使用中",
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                )
-                                            } else {
-                                                TextButton(
-                                                    onClick = { viewModel.selectAsrModel(entry) },
-                                                    contentPadding = PaddingValues(
-                                                        horizontal = 8.dp, vertical = 0.dp
-                                                    ),
-                                                ) { Text("设为当前", fontSize = 13.sp) }
-                                            }
+                                        }
+                                        if (isActive) {
+                                            Text(
+                                                "使用中",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        } else {
+                                            TextButton(
+                                                onClick = { viewModel.selectAsrModel(entry) },
+                                                contentPadding = PaddingValues(
+                                                    horizontal = 8.dp, vertical = 0.dp
+                                                ),
+                                            ) { Text("设为当前", fontSize = 13.sp) }
                                         }
                                     }
                                     else -> TextButton(onClick = { viewModel.download(entry) }) {
                                         Text("下载")
                                     }
                                 }
+                            }
+
+                            // 云端档：填 API Key；并明确告知音频会上传
+                            if (isCloud) {
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = state.cloudAsrKey,
+                                    onValueChange = viewModel::setCloudAsrKey,
+                                    label = { Text("Groq API Key") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "⚠ 选此档时音频会上传到 Groq 服务器识别，" +
+                                        "不再只在设备本地处理。需要联网。",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
                             }
                         }
                     }

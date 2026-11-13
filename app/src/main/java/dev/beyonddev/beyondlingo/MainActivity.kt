@@ -30,20 +30,32 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import dev.beyonddev.beyondlingo.ui.screen.DocumentScreen
 import dev.beyonddev.beyondlingo.ui.screen.HistoryScreen
+import dev.beyonddev.beyondlingo.ui.screen.ModelManagerScreen
 import dev.beyonddev.beyondlingo.ui.screen.OcrScreen
 import dev.beyonddev.beyondlingo.ui.screen.SettingsScreen
+import dev.beyonddev.beyondlingo.ui.screen.SimultScreen
 import dev.beyonddev.beyondlingo.ui.screen.SplashScreen
 import dev.beyonddev.beyondlingo.ui.screen.TranslateScreen
+import dev.beyonddev.beyondlingo.ui.screen.VideoScreen
 import dev.beyonddev.beyondlingo.ui.theme.BeyondLingoTheme
+import dev.beyonddev.beyondlingo.vm.DocumentViewModel
 import dev.beyonddev.beyondlingo.vm.HistoryViewModel
+import dev.beyonddev.beyondlingo.vm.ModelManagerViewModel
+import dev.beyonddev.beyondlingo.vm.SimultViewModel
 import dev.beyonddev.beyondlingo.vm.TranslateViewModel
+import dev.beyonddev.beyondlingo.vm.VideoViewModel
 
 object Routes {
     const val TRANSLATE = "translate"
     const val HISTORY = "history"
     const val SETTINGS = "settings"
     const val OCR = "ocr"
+    const val SIMULT = "simult"
+    const val MODELS = "models"
+    const val VIDEO = "video"
+    const val DOCUMENT = "document"
 }
 
 class MainActivity : ComponentActivity() {
@@ -183,6 +195,42 @@ private fun AppNavHost(vm: TranslateViewModel) {
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
 
                 onOpenOcr = { navController.navigate(Routes.OCR) },
+                onOpenSimult = { navController.navigate(Routes.SIMULT) },
+                onOpenVideo = { navController.navigate(Routes.VIDEO) },
+                onOpenDocument = { navController.navigate(Routes.DOCUMENT) },
+            )
+        }
+
+        composable(Routes.SIMULT) {
+            val simultVm: SimultViewModel = viewModel()
+            SimultScreen(
+                viewModel = simultVm,
+                onBack = { navController.popBackStack() },
+                onOpenModels = { navController.navigate(Routes.MODELS) },
+            )
+        }
+
+        composable(Routes.MODELS) {
+            val modelsVm: ModelManagerViewModel = viewModel()
+            ModelManagerScreen(
+                viewModel = modelsVm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.VIDEO) {
+            val videoVm: VideoViewModel = viewModel()
+            VideoScreen(
+                viewModel = videoVm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.DOCUMENT) {
+            val docVm: DocumentViewModel = viewModel()
+            DocumentScreen(
+                viewModel = docVm,
+                onBack = { navController.popBackStack() },
             )
         }
 

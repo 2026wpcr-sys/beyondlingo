@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "BeyondLingo"
 include(":app")
+include(":asrprobe")

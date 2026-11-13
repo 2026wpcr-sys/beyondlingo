@@ -34,6 +34,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -81,6 +86,9 @@ fun TranslateScreen(
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenOcr: () -> Unit,
+    onOpenSimult: () -> Unit,
+    onOpenVideo: () -> Unit = {},
+    onOpenDocument: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val input by viewModel.input.collectAsStateWithLifecycle()
@@ -90,6 +98,7 @@ fun TranslateScreen(
     val context = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
     var copiedHint by remember { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
 
     // 消费从系统菜单/分享传入的待翻译文本（ACTION_PROCESS_TEXT / SEND）
     LaunchedEffect(Unit) {
@@ -148,11 +157,33 @@ fun TranslateScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenSimult) {
+                        Icon(Icons.Default.Mic, contentDescription = "同声传译")
+                    }
                     IconButton(onClick = onOpenOcr) {
                         Icon(Icons.Default.Image, contentDescription = "图片取词")
                     }
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Default.History, contentDescription = "历史")
+                    }
+                    // 溢出菜单：视频翻译 / 文档翻译
+                    Box {
+                        IconButton(onClick = { moreOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(
+                            expanded = moreOpen,
+                            onDismissRequest = { moreOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("视频翻译") },
+                                onClick = { moreOpen = false; onOpenVideo() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("文档翻译") },
+                                onClick = { moreOpen = false; onOpenDocument() },
+                            )
+                        }
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "设置")

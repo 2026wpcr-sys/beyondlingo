@@ -32,10 +32,17 @@ android {
         applicationId = "dev.beyonddev.beyondlingo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.4.0"
 
         vectorDrawables { useSupportLibrary = true }
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // sherpa-onnx AAR 携带 4 个 ABI（合计 ~137MB），只保留需要的
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -145,4 +152,19 @@ dependencies {
 
     // 图片选择
     implementation("androidx.activity:activity-ktx:1.11.0")
+
+    // ASR —— sherpa-onnx（AAR 来自 GitHub Release，不在 Maven Central）
+    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
+
+    // 视频翻译：抽音频（FFmpegKit 官方 2025-01 退役，用社区维护的 drop-in）
+    // 只引 audio 变体，避免 full 变体的数十 MB 体积
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-audio:8.1.7")
+
+    // 视频播放 + 外挂字幕
+    implementation("androidx.media3:media3-exoplayer:1.9.0")
+    implementation("androidx.media3:media3-ui:1.9.0")
+
+    // 仪器化测试：ASR 基准验证
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
 }

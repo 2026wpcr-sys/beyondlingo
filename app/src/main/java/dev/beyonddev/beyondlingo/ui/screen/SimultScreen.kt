@@ -1,0 +1,305 @@
+package dev.beyonddev.beyondlingo.ui.screen
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.beyonddev.beyondlingo.vm.SimultViewModel
+import dev.beyonddev.beyondlingo.vm.SubtitleLine
+
+/**
+ * 同声传译全屏字幕。
+ *
+ * 交互：点「开始」请求录音权限 → 持续识别 → 每段结束自动翻译上屏。
+ * 字幕布局：原文在上（小、淡），译文在下（大、醒目）—— 与翻译鸥一致。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SimultScreen(
+    viewModel: SimultViewModel,
+    onBack: () -> Unit,
+    onOpenModels: () -> Unit = {},
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val listState = rememberLazyListState()
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) viewModel.start()
+    }
+
+    // 新字幕到达时自动滚到底部
+    LaunchedEffect(state.lines.size, state.partial) {
+        val total = state.lines.size + if (state.partial.isNotEmpty()) 1 else 0
+        if (total > 0) listState.animateScrollToItem(total - 1)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("同声传译") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { viewModel.toggleTts() }) {
+                        Text(if (viewModel.ttsEnabled) "朗读:开" else "朗读")
+                    }
+                    TextButton(onClick = {
+                        if (viewModel.canDrawOverlay()) {
+                            viewModel.startOverlay()
+                        } else {
+                            // 部分 ROM（如 realme）不响应 MANAGE_OVERLAY_PERMISSION，
+                            // 逐级降级：悬浮窗授权页 → 应用详情页 → 提示文案
+                            var opened = false
+                            runCatching {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:" + context.packageName),
+                                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                                opened = true
+                            }
+                            if (!opened) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(
+                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.parse("package:" + context.packageName),
+                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                    opened = true
+                                }
+                            }
+                            viewModel.notifyOverlayNeedsPermission(!opened)
+                        }
+                    }) { Text("悬浮") }
+                    TextButton(onClick = onOpenModels) { Text("模型") }
+                    if (state.lines.isNotEmpty()) {
+                        TextButton(onClick = viewModel::clear) { Text("清空") }
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 20.dp),
+        ) {
+            // ---- 状态提示 ----
+            state.error?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+
+            // ---- 字幕区 ----
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    state.loading -> CenterHint("正在加载语音模型…", showSpinner = true)
+
+                    state.lines.isEmpty() && state.partial.isEmpty() -> CenterHint(
+                        if (state.running) "请开始说话…" else "点击下方按钮开始同传"
+                    )
+
+                    else -> LazyColumn(
+                        state = listState,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(state.lines, key = { it.segmentId }) { line ->
+                            SubtitleBlock(line)
+                        }
+
+                        // 当前正在说的（临时字幕）
+                        if (state.partial.isNotEmpty()) {
+                            item(key = "partial") {
+                                Text(
+                                    text = state.partial,
+                                    fontSize = 20.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontStyle = FontStyle.Italic,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- 控制区 ----
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (state.running) {
+                    Button(
+                        onClick = viewModel::stop,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                    ) {
+                        Text("停止同传", fontSize = 16.sp)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            val granted = ContextCompat.checkSelfPermission(
+                                context, Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) viewModel.start() else permissionLauncher.launch(
+                                Manifest.permission.RECORD_AUDIO
+                            )
+                        },
+                        enabled = !state.loading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                    ) {
+                        Text("开始同传", fontSize = 16.sp)
+                    }
+                }
+            }
+
+            // 仅 debug 构建：无麦克风环境下验证链路（模拟器）
+            if (dev.beyonddev.beyondlingo.BuildConfig.DEBUG && !state.running && !state.loading) {
+                TextButton(
+                    onClick = viewModel::startTestReplay,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("[测试] 回放示例音频验证链路", fontSize = 13.sp)
+                }
+            }
+
+            Text(
+                text = "音频在设备本地识别，仅识别后的文字发送到翻译服务",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SubtitleBlock(line: SubtitleLine) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 原文：小、淡
+        Text(
+            text = line.original,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        // 译文：大、醒目
+        when {
+            line.translating -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(12.dp).height(12.dp),
+                    strokeWidth = 1.5.dp,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "翻译中…",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            else -> Text(
+                text = line.translated.orEmpty(),
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (line.failed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CenterHint(text: String, showSpinner: Boolean = false) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (showSpinner) {
+                CircularProgressIndicator(strokeWidth = 2.dp)
+                Spacer(Modifier.height(16.dp))
+            }
+            Text(
+                text = text,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

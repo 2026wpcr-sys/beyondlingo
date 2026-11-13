@@ -23,6 +23,21 @@ design ideas reused; the Android implementation is independent.
 - **OCR** — ML Kit Latin model, fully offline, images never leave the device
 - **Translation history** — local Room database, searchable and bookmarkable
 
+### Since 1.4.0
+
+- **Simultaneous interpretation** — microphone → on-device streaming ASR →
+  cloud translation → bilingual subtitles. **Audio never leaves the device**;
+  only the recognized text is sent for translation.
+- **Floating subtitle overlay** — keep reading translations while using other apps.
+- **Optional local TTS** — read translations aloud (Matcha zh-en).
+- **Video translation** — pick a local video, get bilingual subtitles and an
+  exportable `.srt`. The video is never re-encoded.
+- **Document translation** — `txt` / `md` / `docx`, with a self-written docx
+  parser (no Apache POI, which breaks on Android) and GB18030 encoding detection.
+- **Bring-your-own model hosting** — ASR / punctuation / TTS models can be
+  downloaded from your own cloud storage with SHA-256 verification and resume
+  support, instead of being bundled into the APK.
+
 ## Install
 
 Download the latest APK from [Releases](https://github.com/2026wpcr-sys/beyondlingo/releases).
@@ -42,6 +57,19 @@ export JAVA_HOME=/path/to/jdk-21
 
 Release builds need `keystore.properties` and `keys/*.jks` (both gitignored);
 without them the build produces an unsigned APK.
+
+### Model and native dependencies are not in this repo
+
+`app/libs/` and `app/src/main/assets/asr/` are gitignored because they total
+~170 MB. Before building, fetch them:
+
+| What | Where |
+|---|---|
+| `app/libs/sherpa-onnx-2.0.1.aar` (47 MB) | [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases) → tag `v2.0.1` |
+| `app/src/main/assets/asr/` (24 MB) | `sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23`, int8 variant; rename to `encoder.int8.onnx` / `decoder.int8.onnx` / `joiner.int8.onnx` / `tokens.txt`, plus a `test.wav` from `test_wavs/` |
+
+Optional larger models (bilingual zh-en ASR, punctuation, TTS) are downloaded at
+runtime from your own cloud storage — see [docs/models-manifest.example.json](docs/models-manifest.example.json).
 
 ## Documentation
 

@@ -13,6 +13,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 同声传译：麦克风采集 + 前台服务 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
     <application
         android:name=".BeyondLingoApp"
         android:allowBackup="true"
@@ -71,6 +75,22 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="划词翻译悬浮窗与剪贴板监听" />
+        </service>
+
+        <!-- 同传保活：麦克风前台服务 -->
+        <service
+            android:name=".service.SimultForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- 同传悬浮字幕 -->
+        <service
+            android:name=".service.SimultOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="同传字幕悬浮窗" />
         </service>
 
     </application>

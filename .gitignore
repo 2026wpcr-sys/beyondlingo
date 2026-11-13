@@ -38,3 +38,23 @@ build.log
 
 # Release 产物（APK 体积大，通过 GitHub Release 分发，不入库）
 dist/
+
+# ---- 二进制依赖与模型（体积过大，不入库）----
+# sherpa-onnx AAR（47MB）：从 https://github.com/k2-fsa/sherpa-onnx/releases
+# 下载 sherpa-onnx-2.0.1.aar 放到 app/libs/
+app/libs/
+
+# ASR / 标点 / TTS 模型（assets 内置的 14M 中文模型 + token 表）
+# 获取方式见 docs/models-manifest.example.json 的 _source 字段，
+# 或直接运行 scripts/fetch-models.sh
+app/src/main/assets/asr/
+
+# 模型原始下载包
+*.tar.bz2
+*.onnx
+
+# 本地分析脚本产物（uiautomator dump 等，仅根目录）
+/h.xml
+/ui.xml
+/uiautomator*.xml
+

@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "_readme": [
+    "放在你的云空间根目录，例如 https://cdn.example.com/models/manifest.json",
+    "要求：HTTPS 直链 + 支持 HTTP Range（断点续传）。网盘类不行。",
+    "每个文件独立下载、独立校验，不做压缩包解压。",
+    "sha256 用小写十六进制；sizeBytes 用于跳过已完整下载的文件（可填 0 表示未知）。",
+    "kind 取值：asr / punctuation / tts",
+    "asr 的 key 固定为 encoder / decoder / joiner / tokens",
+    "punctuation 的 key 固定为 model",
+    "生成 sha256：Linux `sha256sum 文件名`，Windows `certutil -hashfile 文件名 SHA256`"
+  ],
+  "models": [
+    {
+      "id": "zh-en-bilingual-2023-02-20",
+      "name": "中英双语流式 ASR（推荐）",
+      "kind": "asr",
+      "_source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2",
+      "files": [
+        {
+          "key": "encoder",
+          "url": "https://YOUR-CLOUD/models/zh-en/encoder.int8.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        },
+        {
+          "key": "decoder",
+          "url": "https://YOUR-CLOUD/models/zh-en/decoder.int8.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        },
+        {
+          "key": "joiner",
+          "url": "https://YOUR-CLOUD/models/zh-en/joiner.int8.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        },
+        {
+          "key": "tokens",
+          "url": "https://YOUR-CLOUD/models/zh-en/tokens.txt",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        }
+      ]
+    },
+    {
+      "id": "punct-ct-transformer-zh-en-int8",
+      "name": "标点恢复（中英，72MB）",
+      "kind": "punctuation",
+      "_source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8.tar.bz2",
+      "_note": "解压后只需 model.int8.onnx 一个文件",
+      "files": [
+        {
+          "key": "model",
+          "url": "https://YOUR-CLOUD/models/punct/model.int8.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        }
+      ]
+    },
+    {
+      "id": "matcha-icefall-zh-en",
+      "name": "TTS 朗读（Matcha 中英）",
+      "kind": "tts",
+      "_source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-zh-en.tar.bz2",
+      "_note": "acoustic=model-steps-3.onnx / vocoder=generator.onnx / tokens=tokens.txt；可选 lexicon.txt 放同目录",
+      "files": [
+        {
+          "key": "acoustic",
+          "url": "https://YOUR-CLOUD/models/tts/model-steps-3.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        },
+        {
+          "key": "vocoder",
+          "url": "https://YOUR-CLOUD/models/tts/generator.onnx",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        },
+        {
+          "key": "tokens",
+          "url": "https://YOUR-CLOUD/models/tts/tokens.txt",
+          "sha256": "REPLACE_WITH_SHA256",
+          "sizeBytes": 0
+        }
+      ]
+    }
+  ]
+}

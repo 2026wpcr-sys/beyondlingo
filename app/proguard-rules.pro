@@ -34,6 +34,8 @@
 # 无障碍服务与前台服务由系统按类名实例化，必须保留
 -keep class dev.beyonddev.beyondlingo.service.SelectionAccessibilityService { *; }
 -keep class dev.beyonddev.beyondlingo.service.FloatingWindowService { *; }
+-keep class dev.beyonddev.beyondlingo.service.SimultForegroundService { *; }
+-keep class dev.beyonddev.beyondlingo.service.SimultOverlayService { *; }
 -keep class dev.beyonddev.beyondlingo.MainActivity { *; }
 -keep class dev.beyonddev.beyondlingo.BeyondLingoApp { *; }
 
@@ -68,7 +70,44 @@
 -keep class coil.** { *; }
 -dontwarn coil.**
 
-# ---------- 通用 ----------
+# ---------- sherpa-onnx（v1.4.0）----------
+# 关键：SherpaExternalLoader 通过反射调用 private newFromFile，并读写
+# private 字段 ptr / config。R8 若混淆这些名字，反射必然失败，
+# 表现为「模型加载失败 → 静默回退 assets」甚至 native 崩溃。
+# 因此整个包必须完整保留，且禁止改名。
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclassmembers class com.k2fsa.sherpa.onnx.OnlineRecognizer {
+    private long ptr;
+    private <fields>;
+    private native <methods>;
+}
+-keep class com.k2fsa.sherpa.onnx.OnlineRecognizer {
+    private long newFromFile(...);
+}
+-dontwarn com.k2fsa.sherpa.onnx.**
+
+# sun.misc.Unsafe —— SherpaExternalLoader 用它跳过构造器
+-dontwarn sun.misc.**
+-keep class sun.misc.Unsafe { *; }
+
+# ---------- ffmpeg-kit（v1.4.0）----------
+# 通过 JNI 回调，且 SmartException 读堆栈，需保留类名
+-keep class com.arthenica.ffmpegkit.** { *; }
+-keep class com.arthenica.smartexception.** { *; }
+-dontwarn com.arthenica.**
+
+# ---------- Media3（v1.4.0）----------
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
+
+# ---------- 本应用 v1.4.0 新增包 ----------
+# asr 包被 SherpaExternalLoader 与各 Engine 相互引用，保留以防反射/序列化失效
+-keep class dev.beyonddev.beyondlingo.data.asr.** { *; }
+-keep class dev.beyonddev.beyondlingo.data.model.** { *; }
+-keep class dev.beyonddev.beyondlingo.data.video.** { *; }
+-keep class dev.beyonddev.beyondlingo.data.document.** { *; }
+
+# 通用
 # 保留行号用于崩溃分析（混淆后仍可定位）
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

@@ -21,14 +21,17 @@ import kotlin.math.sqrt
  * 语言检测也会飘。所以：
  * - speechRms 从 0.012 降到 0.008：更灵敏，避免把轻声的字切掉
  * - silenceMs 从 650 提到 900：等更久的静音，一段才包含完整句子
- * - minSpeechMs 从 320 提到 500：丢掉过短的碎片
+ * - minSpeechMs 定为 250：「你好」这类短句约 300-400ms，500 会把它们
+ *   当成碎片丢掉（真机实测：说短句时只切出 460ms 的段，被 finishSegment
+ *   丢弃，界面毫无反应——「我讲话都不识别」的根因）。250 能保住短句，
+ *   又足够滤掉咳嗽/敲击这类 < 200ms 的噪声。
  *
  * 线程约束：由同一个采集线程调用，非线程安全。
  */
 class SimpleVad(
     private val speechRms: Float = 0.008f,
     private val silenceMs: Int = 900,
-    private val minSpeechMs: Int = 500,
+    private val minSpeechMs: Int = 250,
     private val maxSegmentMs: Int = 20_000,
     private val sampleRate: Int = 16_000,
 ) {

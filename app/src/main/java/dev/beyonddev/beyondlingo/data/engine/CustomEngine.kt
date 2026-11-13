@@ -96,6 +96,7 @@ class CustomEngine : TranslateEngine {
         }
 
         val endpoint = buildEndpoint(config.baseUrl, config.apiPath)
+        android.util.Log.i("TranslateEngine", "groq/custom endpoint=$endpoint model=${config.model}")
 
         val builder = Request.Builder()
             .url(endpoint)
@@ -258,7 +259,7 @@ object CustomEnginePresets {
         ),
         EnginePreset(
             name = "Groq",
-            baseUrl = "https://api.groq.com/openai",
+            baseUrl = "https://api.groq.com/openai/v1",
             defaultModel = "llama-3.3-70b-versatile",
             note = "速度极快，需海外网络",
         ),

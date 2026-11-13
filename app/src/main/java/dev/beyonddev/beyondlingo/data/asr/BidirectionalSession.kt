@@ -161,6 +161,24 @@ class BidirectionalSession(
     private suspend fun handleSegment(samples: FloatArray) {
         if (samples.isEmpty()) return
 
+        // 诊断：记录每段音频的能量。识别出「感谢观看」这类幻觉时，
+        // 首要怀疑切出来的段其实是噪声/静音（VAD 阈值过灵敏）。
+        val segRms = run {
+            var s = 0.0
+            var peak = 0f
+            for (v in samples) {
+                s += v.toDouble() * v
+                val a = kotlin.math.abs(v)
+                if (a > peak) peak = a
+            }
+            kotlin.math.sqrt(s / samples.size).toFloat() to peak
+        }
+        Log.i(
+            TAG,
+            "segment ${samples.size} samples (${samples.size / 16000 * 1000} ms) " +
+                "rms=${"%.4f".format(segRms.first)} peak=${"%.3f".format(segRms.second)}"
+        )
+
         // ---- 对话翻译模式：语种由按钮显式指定 ----
         // 不做自动检测、不轮流推断。方向固定、语言固定，识别质量最稳。
         val forced = forcedSpeakSide
@@ -216,7 +234,16 @@ class BidirectionalSession(
                     inherited = false,
                 )
             )
-            translate(id, res.text, sourceLang, targetLang)
+
+            // 发出 Translated 事件 —— 之前漏了：只调 translate() 丢掉了返回值，
+            // 导致「翻译成功但界面永远停在翻译中…」（真机实测卡在此处）。
+            val forcedOutcome = translate(id, res.text, sourceLang, targetLang)
+            when (forcedOutcome) {
+                is TranslateOutcome.Success ->
+                    onEvent(Event.Translated(id, forcedOutcome.text, false))
+                is TranslateOutcome.Failure ->
+                    onEvent(Event.Translated(id, "⚠ ${forcedOutcome.message}", true))
+            }
             return
         }
 
@@ -327,13 +354,25 @@ class BidirectionalSession(
         text: String,
         sourceLang: dev.beyonddev.beyondlingo.data.engine.LangEnum,
         targetLang: dev.beyonddev.beyondlingo.data.engine.LangEnum,
-    ): TranslateOutcome = withContext(Dispatchers.IO) {
-        repo.translate(
-            text = text,
-            source = sourceLang,
-            target = targetLang,
-            engineId = engineId,
-            config = engineConfig,
-        )
+    ): TranslateOutcome {
+        Log.i(TAG, "translate begin seg#$id '${text.take(30)}' $sourceLang-> $targetLang engine=$engineId")
+        val t0 = System.nanoTime()
+        val outcome = withContext(Dispatchers.IO) {
+            repo.translate(
+                text = text,
+                source = sourceLang,
+                target = targetLang,
+                engineId = engineId,
+                config = engineConfig,
+            )
+        }
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        when (outcome) {
+            is TranslateOutcome.Success ->
+                Log.i(TAG, "translate ok seg#$id ${ms}ms '${outcome.text.take(40)}'")
+            is TranslateOutcome.Failure ->
+                Log.w(TAG, "translate fail seg#$id ${ms}ms ${outcome.message}")
+        }
+        return outcome
     }
 }

@@ -98,6 +98,9 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
     /** 云端 ASR（Groq）引擎实例 */
     private val cloudAsr = dev.beyonddev.beyondlingo.data.asr.CloudAsrEngine()
 
+    /** custom 引擎 id（Groq 翻译走它，配 Groq baseUrl/model） */
+    private val CUSTOM_ENGINE_ID = "custom"
+
     init {
         viewModelScope.launch {
             settingsStore.settings.collect { s -> selectedAsrModelId = s.asrModelId }
@@ -248,11 +251,14 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             val s = settingsStore.settings.first()
-            engineId = EngineRegistry.DEFAULT_ENGINE_ID
-            engineConfig = s.configFor(engineId)
 
             // 选中的是云端档（kind=asr-cloud）才启用 Groq；否则纯本地
             val selectedIsCloud = selectedAsrIsCloud
+
+            // 翻译引擎与主页完全一致：用户在设置页选什么，对话翻译就用什么。
+            // 云端档只决定「识别」走 Groq，与翻译引擎无关。
+            engineId = s.engineId
+            engineConfig = s.configFor(s.engineId)
 
             val session = BidirectionalSession(
                 context = getApplication(),

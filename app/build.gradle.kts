@@ -180,4 +180,7 @@ dependencies {
     // 仪器化测试：ASR 基准验证
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
+
+    // 单元测试：简繁转换表等纯逻辑
+    testImplementation("junit:junit:4.13.2")
 }

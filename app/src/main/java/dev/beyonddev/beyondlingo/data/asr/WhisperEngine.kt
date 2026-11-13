@@ -140,7 +140,16 @@ class WhisperEngine(private val context: Context) {
             stream.release()
 
             val text = r.text.trim()
-            if (text.isEmpty()) null else Result(text = text, lang = r.lang.orEmpty())
+            if (text.isEmpty()) {
+                null
+            } else {
+                // Whisper 的中文输出可能是繁体（base 倾向繁体，tiny 倾向简体），
+                // 统一转简体保证字幕风格一致。lang 非 zh 时不转，
+                // 避免误伤日文汉字（ja 也用汉字）。
+                val lang = r.lang.orEmpty()
+                val out = if (lang.startsWith("zh")) ZhSimplify.toSimplified(text) else text
+                Result(text = out, lang = lang)
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "transcribe failed: ${t.message}")
             null

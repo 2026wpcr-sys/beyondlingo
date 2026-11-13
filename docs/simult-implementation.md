@@ -369,6 +369,74 @@ BidiSession: seg#0 lang=zh side=LEFT inherited=false asr=198ms text='就黏黏'
 - **面对面 UI**：翻译鸥有 `faceToFace` 模式（手机放桌上两人各看一半），本项目尚未实现，
   当前是单一列表 + 方向标签。
 
+## 第五批：Whisper base + 简繁统一 + 云空间交付包
+
+### tiny vs base 真机对比（RMX3823 / arm64 / SDK 36）
+
+测试样本：英语真人（sherpa-onnx 自带）+ **西语真人电话对话**（Google Translatotron
+的 Fisher-Grounded ST 公开样本，有 ground truth）+ 中/西 TTS 合成音。
+
+| 样本 | Ground truth | tiny int8 (98.8MB) | base int8 (153.2MB) |
+|---|---|---|---|
+| ES real 1 | Y usted no sabrá a menos que usted pida. | ❌ `y usted nos habrá a menos que usted pida` | ✅ `y usted no sabrá a menos que usted pida` |
+| ES real 2 | Deja de hacer eso. | ❌ `They have the access.`（**lang 误判 en**） | ✅ `Dejad de hacer eso.`（lang=es） |
+| ES real 3 | nadar con delfines | ⚠️ `Nadar con del fines` | ✅ `Nadar con del finas` |
+| EN real | (已知全文) | ✅ 正确 | ✅ 正确 |
+| ZH tts | 今天天气不错… | ✅ 简体 | ⚠️ **繁体**「今天天氣不錯我們…」 |
+| ES tts | Buenos dias, como estas? | ✅ `¿cómo estás?` | ⚠️ `¿` → `,` |
+
+**决定用 base 的理由**：双向同传的方向路由**完全依赖 `lang` 字段**，
+而 tiny 在真人西语上会把西语误判成英语（样本 2）——这会直接导致翻译方向错误。
+base 三条全部识别为西语。RTF 0.132–0.168，仍有 6 倍余量。体积代价 +55MB。
+
+### 简繁统一（`data/asr/ZhSimplify.kt` + `ZhSimplifyTable.kt`）
+
+Whisper base 倾向输出繁体，tiny 倾向简体，混在一起字幕风格不一致。
+翻译鸥也有这层处理（DEX 实证 `openccApplied=true, businessLanguage=`）。
+
+**不引 OpenCC 依赖**：Android 侧移植要么词典占数 MB，要么长期无人维护。
+改为内置对照表：
+
+- 数据源：OpenCC 官方 `TSCharacters.txt` + `TSPhrases.txt`
+- 只收 **BMP 内**的一对一映射（扩展区汉字在 UTF-16 占 2 个 char，Kotlin 无法用 `Char` 表示）
+- 词级表优先（整词替换），剩余单字走字级表
+- 多义字（乾/後/髮…）按 OpenCC t2s 规则取第一个候选
+- 生成脚本：`tools/gen-zh-simplify.py`（可重跑）
+
+**踩到的坑**：
+1. `mapOf()` 放 2965 个条目 → `<clinit>` 超过 JVM 64KB 方法上限，
+   编译期报 `Method too large`。解法：拆成 6 个 500 条的小 map 再 fold 合并。
+2. 首版用 `TSCharacters.txt` 直接过滤，把**「简→繁」反向条目**也收进来了，
+   导致某些 key 长度异常。解法：改用 t2s 语义（只取繁体 key）。
+
+单测 6 条全过（`app/src/test/.../ZhSimplifyTest.kt`）。
+
+转换只在 `lang` 以 `zh` 开头时执行，避免误伤日文汉字（ja 也用汉字）。
+
+### 云空间交付包
+
+工作区 `cloud-models/`（**不在 git 里**，模型体积大）：
+
+```
+cloud-models/
+├── manifest.json                    ← 模板，URL 用 YOUR-CLOUD 占位
+├── whisper-base/  encoder.int8.onnx 29.1MB + decoder.int8.onnx 130.7MB + tokens.txt 0.8MB
+└── whisper-tiny/  encoder.int8.onnx 12.9MB + decoder.int8.onnx 89.9MB  + tokens.txt 0.8MB
+```
+
+manifest 里两个模型都是 `kind="asr-offline"`（key: encoder/decoder/tokens）。
+App 侧 `refreshExternalModel` 取第一个就绪的 asr-offline，因此 **base 排在前面**。
+
+### 端到端验证（本地 HTTP 模拟云空间）
+
+```
+拉取 manifest → 找到 2 个模型 → 下载 base 153MB → SHA-256 校验 → 已就绪
+设备侧：encoder.onnx 29120534 / decoder.onnx 130672026 / tokens.txt 816730 / .done
+WhisperEngine: whisper=Whisper base int8 多语种（推荐，153MB） loaded in 665 ms
+BidiSession: seg#0 lang=zh side=LEFT inherited=false asr=1212ms
+             text='你不是十九吗二十四怎么二十呢不是十九吗去领悟去领悟'   ← 简体，转换生效
+```
+
 ## 未完成 / 下一步
 
 - **真机 arm64 复测**（当前只在 x86_64 模拟器跑通）

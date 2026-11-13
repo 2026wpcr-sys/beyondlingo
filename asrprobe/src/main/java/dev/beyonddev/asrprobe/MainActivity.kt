@@ -1,4 +1,4 @@
-﻿package dev.beyonddev.asrprobe
+package dev.beyonddev.asrprobe
 
 import android.app.Activity
 import android.os.Bundle
@@ -29,10 +29,15 @@ class MainActivity : Activity() {
     private companion object {
         const val TAG = "ASRProbe"
         const val TARGET_RATE = 16000
-        const val ENCODER = "whisper/encoder.int8.onnx"
-        const val DECODER = "whisper/decoder.int8.onnx"
-        const val TOKENS = "whisper/tokens.txt"
     }
+
+    /** 候选模型：目录前缀 + 显示名 */
+    private data class ModelSpec(val dir: String, val label: String)
+
+    private val models = listOf(
+        ModelSpec("whisper", "tiny int8 (98.8MB)"),
+        ModelSpec("whisper/base", "base int8 (153.2MB)"),
+    )
 
     private lateinit var tv: TextView
     private lateinit var resultFile: File
@@ -65,9 +70,22 @@ class MainActivity : Activity() {
     }
 
     private fun runAll() {
-        log("=== Whisper tiny (int8) test ===")
+        log("=== Whisper 多模型对比 ===")
         log("device: ${android.os.Build.MODEL} / SDK ${android.os.Build.VERSION.SDK_INT} / ${android.os.Build.SUPPORTED_ABIS.firstOrNull()}")
         log("")
+
+        for (m in models) {
+            log("######## ${m.label}  (${m.dir}) ########")
+            runOne(m)
+            log("")
+        }
+        log("=== DONE ===")
+    }
+
+    private fun runOne(m: ModelSpec) {
+        val enc = "${m.dir}/encoder.int8.onnx"
+        val dec = "${m.dir}/decoder.int8.onnx"
+        val tok = "${m.dir}/tokens.txt"
 
         // ---- 加载模型 ----
         val t0 = System.nanoTime()
@@ -79,12 +97,12 @@ class MainActivity : Activity() {
                     // tailPaddings, enableTokenTimestamps, enableSegmentTimestamps)
                     // 注意：没有 numThreads/debug，那两个属于 OfflineModelConfig
                     whisper = OfflineWhisperModelConfig(
-                        encoder = ENCODER,
-                        decoder = DECODER,
+                        encoder = enc,
+                        decoder = dec,
                         language = "",          // 空 = 自动检测
                         task = "transcribe",
                     ),
-                    tokens = TOKENS,
+                    tokens = tok,
                     numThreads = 2,
                     debug = false,
                 ),
@@ -97,11 +115,22 @@ class MainActivity : Activity() {
         log("model loaded in ${(System.nanoTime() - t0) / 1_000_000} ms")
         log("")
 
-        // ---- 1. 英语自带样本（对照，已知文本） ----
-        recognizeAsset(recognizer, "whisper/en-test.wav", "EN builtin")
+        // ---- 1. 英语自带样本（真人，对照，已知文本） ----
+        recognizeAsset(recognizer, "whisper/en-test.wav", "EN real")
         log("")
 
-        // ---- 2. 西语 / 中文样本（在线 TTS 合成后转 16k，非真人） ----
+        // ---- 2. 西语真人样本（Google Translatotron / Fisher-Grounded ST 电话对话） ----
+        recognizeAsset(recognizer, "whisper/es-real-1.wav", "ES real 1")
+        log("  expect ≈ Y usted no sabrá a menos que usted pida.")
+        log("")
+        recognizeAsset(recognizer, "whisper/es-real-2.wav", "ES real 2")
+        log("  expect ≈ Deja de hacer eso.")
+        log("")
+        recognizeAsset(recognizer, "whisper/es-real-3.wav", "ES real 3")
+        log("  expect ≈ nadar con delfines")
+        log("")
+
+        // ---- 3. 西语 / 中文 TTS 合成样本（非真人，仅作对照） ----
         recognizeAsset(recognizer, "whisper/es-tts.wav", "ES tts")
         log("  expect ≈ Buenos dias, como estas? Me alegra mucho verte hoy.")
         log("")
@@ -110,8 +139,6 @@ class MainActivity : Activity() {
         log("")
 
         recognizer.release()
-        log("")
-        log("=== DONE ===")
     }
 
     private fun recognizeAsset(rec: OfflineRecognizer, path: String, label: String) {

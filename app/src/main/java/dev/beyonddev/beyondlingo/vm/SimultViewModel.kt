@@ -121,20 +121,39 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile
     private var ttsProvider: String = "local"
 
-    /** 按语言朗读：Edge → 云端 → 本地 Matcha */
-    private fun speakOut(text: String, langCode: String) {
-        if (!ttsEnabled) return
+    /**
+     * 按语言朗读：Edge → 云端 → 本地 Matcha。
+     * [onDone] 在朗读结束/被停/失败时回调一次（UI 用来清播放态）。
+     */
+    private fun speakOut(
+        text: String,
+        langCode: String,
+        ignoreTtsSwitch: Boolean = false,
+        onDone: (() -> Unit)? = null,
+    ) {
+        // ttsEnabled 是旧的「自动朗读每条译文」总开关；卡片 ▶ 是用户主动点播，
+        // 不受它控制（开关 UI 已移除，自动朗读路径仍用它）。
+        if (!ttsEnabled && !ignoreTtsSwitch) return
         when (ttsProvider) {
-            "edge" -> edgeTts.speak(text, langCode) { failure ->
-                // Edge 失败：先报给 UI；前面还没播出任何音频时才整段回退本地，
-                // 否则会重复播前面已播的部分。
-                _state.update { it.copy(error = failure.message + "，已回退本地朗读") }
-                if (!failure.playedAny) tts.speak(text)
-            }
+            "edge" -> edgeTts.speak(
+                text = text,
+                lang = langCode,
+                onFailure = { failure ->
+                    // Edge 失败：先报给 UI；前面还没播出任何音频时才整段回退本地，
+                    // 否则会重复播前面已播的部分。
+                    _state.update { it.copy(error = failure.message + "，已回退本地朗读") }
+                    _speakingSegmentId.value = null
+                    onDone?.invoke()
+                    if (!failure.playedAny) tts.speak(text)
+                },
+                onDone = onDone,
+            )
             else -> if (cloudTts.isReady) {
                 cloudTts.speak(text, langCode)
+                onDone?.invoke() // CloudTtsEngine 无结束回调，按已触发处理
             } else {
                 tts.speak(text)
+                onDone?.invoke()
             }
         }
     }
@@ -661,6 +680,117 @@ class SimultViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun ttsReady(): Boolean = tts.isReady
+
+    /** 当前正在朗读的卡片 segmentId；null = 空闲 */
+    private val _speakingSegmentId = MutableStateFlow<Int?>(null)
+    val speakingSegmentId: StateFlow<Int?> = _speakingSegmentId
+
+    /**
+     * 逐条朗读：读这条卡片的**目标语言**译文（方向 label "X → Y" 的 Y）。
+     * 再次点击正在朗读的这条 = 停止。译文缺失或翻译失败时不动。
+     */
+    fun speakLine(segmentId: Int) {
+        // 播放中再点同一条 → 停止
+        if (_speakingSegmentId.value == segmentId) {
+            stopSpeaking()
+            return
+        }
+        stopSpeaking()
+        val line = _state.value.lines.firstOrNull { it.segmentId == segmentId }
+        if (line == null) {
+            android.util.Log.w("SimultVM", "speakLine: line $segmentId not found")
+            return
+        }
+        val text = line.translated?.takeIf { it.isNotBlank() && !line.failed }
+        if (text == null) {
+            android.util.Log.w(
+                "SimultVM",
+                "speakLine: no playable text (translated=${line.translated?.take(20)}, failed=${line.failed})",
+            )
+            return
+        }
+        val targetLabel = line.directionLabel.substringAfter("→").trim()
+        if (targetLabel.isEmpty()) {
+            android.util.Log.w(
+                "SimultVM",
+                "speakLine: cannot parse target lang from '${line.directionLabel}'",
+            )
+            return
+        }
+        android.util.Log.i(
+            "SimultVM",
+            "speakLine: speak '$text' lang=$targetLabel provider=$ttsProvider",
+        )
+        _speakingSegmentId.value = segmentId
+        // 朗读抑制：外放声音会被麦克风收进来自识别（回声循环），
+        // 播放期间暂停识别，结束后恢复
+        bidiSession?.pauseRecognition()
+        speakOut(
+            text,
+            langToWhisper(targetLabel),
+            ignoreTtsSwitch = true,
+            onDone = {
+                _speakingSegmentId.value = null
+                bidiSession?.resumeRecognition()
+            },
+        )
+    }
+
+    /** 停止当前朗读（含播放线程），并清掉播放态 */
+    fun stopSpeaking() {
+        tts.stopSpeaking()
+        cloudTts.stopSpeaking()
+        edgeTts.stop()
+        _speakingSegmentId.value = null
+        bidiSession?.resumeRecognition()
+    }
+
+    /**
+     * 编辑某条卡片的原文：确认后置回「翻译中」并按新文字重新翻译，
+     * 完成后原地更新这条卡片（segmentId 不变）。
+     */
+    fun editLineOriginal(segmentId: Int, newOriginal: String) {
+        val text = newOriginal.trim()
+        if (text.isEmpty()) return
+        val line = _state.value.lines.firstOrNull { it.segmentId == segmentId } ?: return
+        if (line.original == text) return
+        _state.update { st ->
+            st.copy(lines = st.lines.map {
+                if (it.segmentId == segmentId) {
+                    it.copy(original = text, translating = true, translated = null, failed = false)
+                } else it
+            })
+        }
+        publishToOverlay()
+        // 双向模式按这条卡片自己的方向重翻；找不到方向时退回全局 targetLang
+        val sourceLabel = line.directionLabel.substringBefore("→").trim()
+        val targetLabel = line.directionLabel.substringAfter("→").trim()
+        val source = LangEnum.entries.firstOrNull { it.labelZh == sourceLabel } ?: LangEnum.Auto
+        val target = LangEnum.entries.firstOrNull { it.labelZh == targetLabel } ?: targetLang
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                repo.translate(
+                    text = text,
+                    source = source,
+                    target = target,
+                    engineId = engineId,
+                    config = engineConfig,
+                )
+            }
+            val (outText, failed) = when (outcome) {
+                is TranslateOutcome.Success -> outcome.text to false
+                is TranslateOutcome.Failure -> "⚠ ${outcome.message}" to true
+            }
+            _state.update { st ->
+                st.copy(lines = st.lines.map {
+                    if (it.segmentId == segmentId) {
+                        it.copy(translated = outText, translating = false, failed = failed)
+                    } else it
+                })
+            }
+            publishToOverlay()
+        }
+    }
 
     // ---- 悬浮窗 ----
 

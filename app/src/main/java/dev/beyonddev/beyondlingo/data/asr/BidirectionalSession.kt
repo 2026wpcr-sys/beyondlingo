@@ -81,6 +81,31 @@ class BidirectionalSession(
     private val segments = Channel<FloatArray>(Channel.UNLIMITED)
     private var recorder: AudioRecorder? = null
     private var consumerJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * 朗读抑制：TTS 外放时本机麦克风会收到自己的朗读声（实测 rms 与真人说话
+     * 相当），ASR 会把自己的西语朗读识别成中文造成回声循环。
+     * 暂停期间丢弃采集样本（保留 VAD 状态不清零，恢复后无需重新校准）。
+     */
+    @Volatile private var paused = false
+
+    /** TTS 播放期间调用：丢弃麦克风输入，防回声自识别 */
+    fun pauseRecognition() {
+        paused = true
+    }
+
+    /** 朗读结束后调用：恢复识别 */
+    fun resumeRecognition() {
+        paused = false
+    }
+
+    /**
+     * VAD 提升为成员：stop() 时需要 flush 它缓冲里未切出的残留语音。
+     * 以前它是 start() 里的局部变量，stop() 够不到——用户说完话立刻松手，
+     * 缓冲里整句话被静默丢弃，屏幕什么都不显示（嘈杂环境下 VAD 永远
+     * 等不到静音，唯一的切段出口是 20s 强制上限）。
+     */
+    private var vad: SimpleVad? = null
     @Volatile private var segmentId = 0
     @Volatile private var lastSpeaking = false
 
@@ -105,16 +130,19 @@ class BidirectionalSession(
             }
         }
 
-        val vad = SimpleVad()
+        val v = SimpleVad()
+        vad = v
         val r = AudioRecorder(
             onSamples = { chunk ->
+                // 朗读抑制：外放时麦克风收到自己的 TTS，丢弃防止回声自识别
+                if (paused) return@AudioRecorder
                 // 采集线程：只做 VAD，绝不做识别
-                val speaking = vad.isSpeaking || runCatching { rmsOf(chunk) > 0.012f }.getOrDefault(false)
+                val speaking = v.isSpeaking || runCatching { rmsOf(chunk) > 0.012f }.getOrDefault(false)
                 if (speaking != lastSpeaking) {
                     lastSpeaking = speaking
                     onEvent(Event.Speaking(speaking))
                 }
-                vad.feed(chunk)?.let { seg -> segments.trySend(seg) }
+                v.feed(chunk)?.let { seg -> segments.trySend(seg) }
             },
             onError = { msg -> onEvent(Event.Error(msg)) },
         )
@@ -125,6 +153,13 @@ class BidirectionalSession(
     fun stop() {
         recorder?.stop()
         recorder = null
+        // flush VAD 缓冲里未切出的残留段：用户说完话立刻松手时，
+        // 这段语音正是要识别的内容，以前被静默丢弃（「说话不显示」根因）。
+        // 空段之前先送 flush 段，让消费协程把真实语音处理完再收尾。
+        vad?.flush()?.let { seg ->
+            if (seg.isNotEmpty()) segments.trySend(seg)
+        }
+        vad = null
         // 把残留段处理掉再关闭
         runCatching { segments.trySend(FloatArray(0)) }
         consumerJob?.cancel()

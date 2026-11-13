@@ -91,19 +91,30 @@ class EdgeTtsEngine {
      * 合成并播放；[lang] 是 ISO-639-1（决定音色）。
      *
      * 失败时调 [onFailure]（UI 线程外回调，不要在里面做耗时操作）；
-     * 成功或被 [stop] 中断时不回调。
+     * 全部块播完时调 [onDone]（含被 [stop] 打断的情况）；被中断时不调 [onFailure]。
      */
     fun speak(
         text: String,
         lang: String,
         speed: Float = 1.0f,
         onFailure: ((EdgeFailure) -> Unit)? = null,
+        onDone: (() -> Unit)? = null,
     ) {
-        if (text.isBlank()) return
+        if (text.isBlank()) {
+            onDone?.invoke()
+            return
+        }
+        // 提交前先清 stopped 并换代：调用方常在 speak 前调过 stop()（stopped=true），
+        // 若不在提交侧复位，新任务进 executor 后看到 true 直接静默退出。
+        // generation+1 让旧任务（若有）的 gen 检查失败而退出。
+        generation.incrementAndGet()
         val gen = generation.get()
+        stopped.set(false)
         executor.execute {
-            if (gen != generation.get() || stopped.get()) return@execute
-            stopped.set(false)
+            if (gen != generation.get() || stopped.get()) {
+                onDone?.invoke()
+                return@execute
+            }
             player.reset()
             val voice = EdgeTtsCodec.voiceFor(lang)
             val rate = EdgeTtsCodec.rateFor(speed)
@@ -111,14 +122,24 @@ class EdgeTtsEngine {
             try {
                 val chunks = EdgeTtsCodec.prepareChunks(text)
                 for (chunk in chunks) {
-                    if (stopped.get() || gen != generation.get()) return@execute
+                    if (stopped.get() || gen != generation.get()) {
+                        onDone?.invoke()
+                        return@execute
+                    }
                     val mp3 = synthChunk(chunk, voice, rate)
-                    if (stopped.get() || gen != generation.get()) return@execute
+                    if (stopped.get() || gen != generation.get()) {
+                        onDone?.invoke()
+                        return@execute
+                    }
                     player.playMp3(mp3)
                     playedAny = true
                 }
+                onDone?.invoke() // 全部块播完
             } catch (t: Throwable) {
-                if (stopped.get() || gen != generation.get()) return@execute
+                if (stopped.get() || gen != generation.get()) {
+                    onDone?.invoke()
+                    return@execute
+                }
                 Log.w(TAG, "speak failed: ${t.message}")
                 onFailure?.invoke(EdgeFailure(friendlyMessage(t), playedAny))
             }

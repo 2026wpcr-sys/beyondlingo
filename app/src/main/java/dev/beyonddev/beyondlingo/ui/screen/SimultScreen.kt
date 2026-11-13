@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,14 +26,22 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -74,6 +83,7 @@ fun SimultScreen(
     onOpenModels: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val speakingSegmentId by viewModel.speakingSegmentId.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
@@ -85,6 +95,9 @@ fun SimultScreen(
     var pendingSide by remember {
         mutableStateOf(BidirectionalResolver.Side.LEFT)
     }
+
+    // 正在编辑原文的卡片 segmentId；null 表示没有编辑对话框
+    var editingSegmentId by remember { mutableStateOf<Int?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -108,9 +121,6 @@ fun SimultScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { viewModel.toggleTts() }) {
-                        Text(if (viewModel.ttsEnabled) "朗读:开" else "朗读")
-                    }
                     TextButton(onClick = {
                         if (viewModel.canDrawOverlay()) {
                             viewModel.startOverlay()
@@ -182,7 +192,12 @@ fun SimultScreen(
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         items(state.lines, key = { it.segmentId }) { line ->
-                            SubtitleBlock(line)
+                            SubtitleCard(
+                                line = line,
+                                speaking = speakingSegmentId == line.segmentId,
+                                onSpeak = { viewModel.speakLine(line.segmentId) },
+                                onEdit = { editingSegmentId = line.segmentId },
+                            )
                         }
 
                         // 当前正在说的（临时字幕）
@@ -309,64 +324,169 @@ fun SimultScreen(
             )
         }
     }
-}
 
-@Composable
-private fun SubtitleBlock(line: SubtitleLine) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // 说话方标签（仅双向模式显示）：直接显示语种，不写「我方/对方」
-        if (line.side != BidirectionalResolver.Side.UNKNOWN) {
-            val isMe = line.side == BidirectionalResolver.Side.LEFT
-            val langLabel = line.directionLabel.substringBefore("→").trim()
-            if (langLabel.isNotEmpty()) {
-                Text(
-                    text = langLabel,
-                    fontSize = 10.sp,
-                    color = if (isMe) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.tertiary
-                    },
-                    modifier = Modifier.padding(bottom = 2.dp),
-                )
-            }
-        }
-        // 原文：小、淡
-        Text(
-            text = line.original,
-            fontSize = 15.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(6.dp))
-        // 译文：大、醒目
-        when {
-            line.translating -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    modifier = Modifier.width(12.dp).height(12.dp),
-                    strokeWidth = 1.5.dp,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "翻译中…",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            else -> Text(
-                text = line.translated.orEmpty(),
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (line.failed) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurface
+    // 编辑原文对话框：确认后按这条卡片自己的方向重新翻译
+    editingSegmentId?.let { segId ->
+        val line = state.lines.firstOrNull { it.segmentId == segId }
+        if (line == null) {
+            editingSegmentId = null
+        } else {
+            EditOriginalDialog(
+                initial = line.original,
+                onDismiss = { editingSegmentId = null },
+                onConfirm = { newText ->
+                    viewModel.editLineOriginal(segId, newText)
+                    editingSegmentId = null
                 },
-                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
+}
+
+@Composable
+private fun SubtitleCard(
+    line: SubtitleLine,
+    speaking: Boolean,
+    onSpeak: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        ),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            // 原文行：左侧文字 + 铅笔编辑按钮
+            Row(verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    // 说话方标签（仅双向模式显示）：直接显示语种，不写「我方/对方」
+                    if (line.side != BidirectionalResolver.Side.UNKNOWN) {
+                        val isMe = line.side == BidirectionalResolver.Side.LEFT
+                        val langLabel = line.directionLabel.substringBefore("→").trim()
+                        if (langLabel.isNotEmpty()) {
+                            Text(
+                                text = langLabel,
+                                fontSize = 10.sp,
+                                color = if (isMe) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.tertiary
+                                },
+                                modifier = Modifier.padding(bottom = 2.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        text = line.original,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // 铅笔：编辑原文 → 重新翻译
+                IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "编辑原文",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            )
+
+            // 译文行：左侧译文 + ▶ 朗读按钮（读目标语言）
+            when {
+                line.translating -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.width(12.dp).height(12.dp),
+                        strokeWidth = 1.5.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "翻译中…",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                else -> Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        text = line.translated.orEmpty(),
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (line.failed) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    // ▶/■：朗读这条译文（双向：读方向箭头右侧的语种）；
+                    // 播放中变为停止按钮
+                    IconButton(
+                        onClick = onSpeak,
+                        enabled = !line.failed && !line.translated.isNullOrBlank(),
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (speaking) {
+                                Icons.Default.Stop
+                            } else {
+                                Icons.Default.PlayArrow
+                            },
+                            contentDescription = if (speaking) "停止朗读" else "朗读译文",
+                            tint = when {
+                                line.failed || line.translated.isNullOrBlank() ->
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                speaking -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 编辑原文对话框：确认后重新翻译并原地更新卡片 */
+@Composable
+private fun EditOriginalDialog(
+    initial: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑原文") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 6,
+                singleLine = false,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (text.isNotBlank()) onConfirm(text.trim()) },
+                enabled = text.isNotBlank() && text.trim() != initial,
+            ) { Text("重新翻译") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 /**
